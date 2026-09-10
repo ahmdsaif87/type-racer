@@ -157,13 +157,36 @@ export function App() {
       return;
     }
 
+    // Solo practice rooms are strictly private
+    if (!isCreate && formattedCode.startsWith('SOLO')) {
+      setErrorInfo({
+        roomId: formattedCode,
+        message: uiLanguage === 'id'
+          ? `Room solo practice bersifat pribadi dan tidak dapat dimasuki pemain lain.`
+          : `Solo practice rooms are private and cannot be joined by other players.`
+      });
+      setView('ERROR');
+      return;
+    }
+
     setIsPageNavigating(true);
     const state = useRaceStore.getState();
+
+    if (state.isSinglePlayer) {
+      setTimeout(() => {
+        setView('RACE_ROOM');
+        window.history.pushState({}, '', `/race/solo`);
+        setIsPageNavigating(false);
+      }, 600);
+      return;
+    }
+
     if (isCreate) {
       state.createRoom(formattedCode);
     } else if (state.roomId !== formattedCode) {
       state.joinExistingRoom(formattedCode);
     }
+
     realtimeService.connectRoom(formattedCode);
     
     if (isCreate) {

@@ -98,9 +98,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
           <span className="text-sm font-bold text-[var(--accent-main)]">
             {isSinglePlayer ? strings.soloPractice : `${strings.room}: ${roomId}`}
           </span>
-          {isHost && (
+          {isHost && !isSinglePlayer && (
             <span className="text-[10px] text-[var(--accent-main)] bg-[var(--bg-input)] px-2 py-0.5 rounded border border-[var(--border-main)] font-semibold">
-              {isSinglePlayer ? strings.singlePlayer : 'host'}
+              host
             </span>
           )}
           {!isSinglePlayer && (

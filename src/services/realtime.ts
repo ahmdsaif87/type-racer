@@ -52,6 +52,12 @@ class RealtimeService {
     this.joinAttemptStartTime = Date.now();
 
     const state = useRaceStore.getState();
+
+    // Solo practice mode runs 100% locally - bypass network peer registration
+    if (state.isSinglePlayer) {
+      return;
+    }
+
     const isHost = state.hostId === state.localPlayerId;
     const cleanRoomId = roomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const hostPeerId = `tr-host-${cleanRoomId}`;
