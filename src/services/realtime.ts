@@ -38,6 +38,11 @@ class RealtimeService {
   private lastProgressBroadcast: number = 0;
   private isConnectingHost: boolean = false;
   private joinAttemptStartTime: number = 0;
+  private onRoomNotFoundListener: ((roomId: string) => void) | null = null;
+
+  public setOnRoomNotFound(cb: (roomId: string) => void) {
+    this.onRoomNotFoundListener = cb;
+  }
 
   public connectRoom(roomId: string) {
     if (this.currentRoomId === roomId && (this.channel || this.socket || this.peer)) return;
@@ -190,24 +195,17 @@ class RealtimeService {
       this.hostConnection = null;
     });
 
-    // Periodic check & auto-host failover if no host exists after 3.5s
+    // Periodic check: if no host responds after 3.5 seconds, notify room not found
     this.syncTimer = setInterval(() => {
       const s = useRaceStore.getState();
       const hasOtherPlayers = Object.keys(s.players).length > 1;
       const timeElapsed = Date.now() - this.joinAttemptStartTime;
 
       if (!hasOtherPlayers && !s.hostId && timeElapsed > 3500) {
-        // No host responded to this room code - claim host role so room works cleanly
-        useRaceStore.setState({ hostId: s.localPlayerId });
-        if (s.players[s.localPlayerId]) {
-          useRaceStore.setState({
-            players: {
-              ...s.players,
-              [s.localPlayerId]: { ...s.players[s.localPlayerId], isHost: true }
-            }
-          });
+        if (this.onRoomNotFoundListener) {
+          this.onRoomNotFoundListener(roomId);
         }
-        this.initHostPeer(hostPeerId);
+        this.disconnect();
         return;
       }
 

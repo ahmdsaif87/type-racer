@@ -15,9 +15,13 @@ import { CountdownOverlay } from './components/CountdownOverlay';
 import { PostRaceModal } from './components/PostRaceModal';
 import { LoadingScreen } from './components/LoadingScreen';
 import { AntigravityParticles } from './components/AntigravityParticles';
+import { ErrorPage } from './components/ErrorPage';
+import { ComingSoonPage } from './components/ComingSoonPage';
 
 export function App() {
-  const [view, setView] = useState<'LANDING' | 'RACE_ROOM'>('LANDING');
+  const [view, setView] = useState<'LANDING' | 'RACE_ROOM' | 'ERROR' | 'COMING_SOON'>('LANDING');
+  const [errorInfo, setErrorInfo] = useState<{ message?: string; roomId?: string }>({});
+  const [activeFeatureName, setActiveFeatureName] = useState<string>('');
   const [isInitialBoot, setIsInitialBoot] = useState<boolean>(true);
   const [isPageNavigating, setIsPageNavigating] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(soundEngine.getIsMuted());
@@ -32,7 +36,8 @@ export function App() {
     targetText,
     uiLanguage,
     setUiLanguage,
-    resetRaceRoom
+    resetRaceRoom,
+    createRoom
   } = useRaceStore();
 
   const {
@@ -49,13 +54,42 @@ export function App() {
     return () => clearTimeout(bootTimer);
   }, []);
 
+  // Set up room not found listener
+  useEffect(() => {
+    realtimeService.setOnRoomNotFound((failedRoomId) => {
+      setIsPageNavigating(false);
+      resetRaceRoom();
+      resetTyping();
+      setErrorInfo({
+        roomId: failedRoomId,
+        message: uiLanguage === 'id'
+          ? `Room dengan kode "${failedRoomId}" tidak ditemukan. Pastikan host telah membuat room tersebut.`
+          : `Room with code "${failedRoomId}" was not found. Make sure the host has created the room.`
+      });
+      setView('ERROR');
+      window.history.pushState({}, '', '/');
+    });
+  }, [uiLanguage, resetRaceRoom, resetTyping]);
+
+  // Transition guest into RACE_ROOM once host state is received
+  useEffect(() => {
+    if (isPageNavigating && view !== 'RACE_ROOM') {
+      const state = useRaceStore.getState();
+      if (state.hostId && state.roomId) {
+        setView('RACE_ROOM');
+        window.history.pushState({}, '', `/race/${state.roomId}`);
+        setIsPageNavigating(false);
+      }
+    }
+  }, [status, players, isPageNavigating, view]);
+
   // Check URL route on load (e.g. /race/RACE-9182)
   useEffect(() => {
     const path = window.location.pathname;
     if (path.startsWith('/race/')) {
       const extractedCode = path.replace('/race/', '').toUpperCase();
       if (extractedCode) {
-        handleEnterRaceRoom(extractedCode);
+        handleEnterRaceRoom(extractedCode, false);
       }
     }
   }, []);
@@ -68,6 +102,8 @@ export function App() {
         soundEngine.playKeyPress();
         if (view === 'RACE_ROOM') {
           handleLeaveLobby();
+        } else if (view === 'ERROR' || view === 'COMING_SOON') {
+          handleReturnToHome();
         }
       }
     };
@@ -107,20 +143,36 @@ export function App() {
   };
 
   const handleEnterRaceRoom = (roomCode: string, isCreate: boolean = false) => {
+    const formattedCode = roomCode.trim().toUpperCase();
+    const validRegex = /^[A-Z0-9-]{4,20}$/;
+
+    if (!validRegex.test(formattedCode)) {
+      setErrorInfo({
+        roomId: formattedCode,
+        message: uiLanguage === 'id'
+          ? `Kode room "${formattedCode}" tidak valid. Kode room harus terdiri dari 4-20 karakter alfanumerik (mis. RACE-9182).`
+          : `Room code "${formattedCode}" is invalid. Room code must be 4-20 alphanumeric characters (e.g. RACE-9182).`
+      });
+      setView('ERROR');
+      return;
+    }
+
     setIsPageNavigating(true);
     const state = useRaceStore.getState();
     if (isCreate) {
-      state.createRoom(roomCode);
-    } else if (state.roomId !== roomCode) {
-      state.joinExistingRoom(roomCode);
+      state.createRoom(formattedCode);
+    } else if (state.roomId !== formattedCode) {
+      state.joinExistingRoom(formattedCode);
     }
-    realtimeService.connectRoom(roomCode);
+    realtimeService.connectRoom(formattedCode);
     
-    setTimeout(() => {
-      setView('RACE_ROOM');
-      window.history.pushState({}, '', `/race/${roomCode}`);
-      setIsPageNavigating(false);
-    }, 600);
+    if (isCreate) {
+      setTimeout(() => {
+        setView('RACE_ROOM');
+        window.history.pushState({}, '', `/race/${formattedCode}`);
+        setIsPageNavigating(false);
+      }, 600);
+    }
   };
 
   const handleLeaveLobby = () => {
@@ -133,6 +185,25 @@ export function App() {
       window.history.pushState({}, '', '/');
       setIsPageNavigating(false);
     }, 500);
+  };
+
+  const handleReturnToHome = () => {
+    realtimeService.disconnect();
+    resetRaceRoom();
+    resetTyping();
+    setView('LANDING');
+    window.history.pushState({}, '', '/');
+  };
+
+  const handleCreateNewRoomFromError = () => {
+    const newRoomId = 'RACE-' + Math.floor(1000 + Math.random() * 9000);
+    createRoom(newRoomId);
+    handleEnterRaceRoom(newRoomId, true);
+  };
+
+  const handleOpenComingSoon = (featureName: string) => {
+    setActiveFeatureName(featureName);
+    setView('COMING_SOON');
   };
 
   const handleToggleMute = () => {
@@ -217,7 +288,7 @@ export function App() {
       {/* Main Content Body with Smooth Fade Transition */}
       <main key={view} className="relative z-10 flex-1 w-full px-3 sm:w-[90%] md:w-[85%] mx-auto py-2 sm:py-4 flex flex-col justify-center page-fade-enter">
         {view === 'LANDING' && (
-          <LandingPage onStartRace={handleEnterRaceRoom} />
+          <LandingPage onStartRace={handleEnterRaceRoom} onOpenComingSoon={handleOpenComingSoon} />
         )}
 
         {view === 'RACE_ROOM' && (
@@ -259,6 +330,22 @@ export function App() {
               }} />
             )}
           </>
+        )}
+
+        {view === 'ERROR' && (
+          <ErrorPage
+            errorMessage={errorInfo.message}
+            roomId={errorInfo.roomId}
+            onReturnHome={handleReturnToHome}
+            onCreateNewRoom={handleCreateNewRoomFromError}
+          />
+        )}
+
+        {view === 'COMING_SOON' && (
+          <ComingSoonPage
+            featureName={activeFeatureName}
+            onReturnHome={handleReturnToHome}
+          />
         )}
       </main>
 
