@@ -12,6 +12,20 @@ type RealtimeMessage =
   | { event: 'request_sync'; payload: { roomId: string; requesterId: string } }
   | { event: 'player_leave'; payload: { roomId: string; playerId: string } };
 
+const PEER_CONFIG = {
+  debug: 1,
+  config: {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' }
+    ]
+  }
+};
+
 class RealtimeService {
   private channel: BroadcastChannel | null = null;
   private socket: WebSocket | null = null;
@@ -22,12 +36,15 @@ class RealtimeService {
 
   private currentRoomId: string = '';
   private lastProgressBroadcast: number = 0;
+  private isConnectingHost: boolean = false;
+  private joinAttemptStartTime: number = 0;
 
   public connectRoom(roomId: string) {
     if (this.currentRoomId === roomId && (this.channel || this.socket || this.peer)) return;
 
     this.disconnect();
     this.currentRoomId = roomId;
+    this.joinAttemptStartTime = Date.now();
 
     const state = useRaceStore.getState();
     const isHost = state.hostId === state.localPlayerId;
@@ -44,102 +61,40 @@ class RealtimeService {
       // BroadcastChannel fallback
     }
 
-    // 2. Local/Public WebSocket (Direct Node server relay via /ws endpoint)
+    // 2. Local/Public WebSocket (Direct Node server relay via /ws endpoint if available)
     try {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-      this.socket = new WebSocket(wsUrl);
+      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        this.socket = new WebSocket(wsUrl);
 
-      this.socket.onopen = () => {
-        this.announceJoin(roomId);
-      };
+        this.socket.onopen = () => {
+          this.announceJoin(roomId);
+        };
 
-      this.socket.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data) as RealtimeMessage;
-          this.handleIncomingMessage(msg);
-        } catch {
-          // ignore non-json
-        }
-      };
+        this.socket.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data) as RealtimeMessage;
+            this.handleIncomingMessage(msg);
+          } catch {
+            // ignore non-json
+          }
+        };
+
+        this.socket.onerror = () => {
+          // Silent fallback on non-websocket hosts
+        };
+      }
     } catch {
       // WebSocket fallback
     }
 
-    // 3. WebRTC PeerJS P2P DataChannel (Global P2P Fallback via PeerJS Cloud)
+    // 3. WebRTC PeerJS P2P DataChannel (Global P2P via PeerJS Cloud with STUN)
     try {
       if (isHost) {
-        const initHostPeer = () => {
-          this.peer = new Peer(hostPeerId, { debug: 1 });
-          
-          this.peer.on('error', (err) => {
-            if (err.type === 'unavailable-id') {
-              setTimeout(() => {
-                if (this.peer && !this.peer.destroyed) {
-                  this.peer.destroy();
-                }
-                initHostPeer();
-              }, 1000);
-            }
-          });
-
-          this.setupHostListeners();
-        };
-
-        initHostPeer();
+        this.initHostPeer(hostPeerId);
       } else {
-        // Guest PeerJS instance with auto-retry loop for host connection
-        this.peer = new Peer({ debug: 1 });
-
-        const connectToHost = () => {
-          if (!this.peer || this.peer.destroyed) return;
-          if (this.hostConnection && this.hostConnection.open) return;
-
-          try {
-            const conn = this.peer.connect(hostPeerId, { reliable: true });
-            this.hostConnection = conn;
-
-            conn.on('open', () => {
-              this.announceJoin(roomId);
-            });
-
-            conn.on('data', (data) => {
-              try {
-                const msg = JSON.parse(data as string) as RealtimeMessage;
-                this.handleIncomingMessage(msg);
-              } catch {
-                // ignore
-              }
-            });
-
-            conn.on('error', () => {
-              this.hostConnection = null;
-            });
-
-            conn.on('close', () => {
-              this.hostConnection = null;
-            });
-          } catch {
-            this.hostConnection = null;
-          }
-        };
-
-        this.peer.on('open', () => {
-          connectToHost();
-        });
-
-        this.peer.on('error', () => {
-          this.hostConnection = null;
-        });
-
-        // Periodic retry connection to host every 1.5s until hostConnection is open
-        this.syncTimer = setInterval(() => {
-          const s = useRaceStore.getState();
-          if (Object.keys(s.players).length <= 1 || !this.hostConnection || !this.hostConnection.open) {
-            connectToHost();
-            this.announceJoin(roomId);
-          }
-        }, 1500);
+        this.initGuestPeer(hostPeerId, roomId);
       }
     } catch {
       // PeerJS fallback
@@ -149,32 +104,154 @@ class RealtimeService {
     this.announceJoin(roomId);
   }
 
+  private initHostPeer(hostPeerId: string) {
+    if (this.peer && !this.peer.destroyed) {
+      this.peer.destroy();
+    }
+
+    this.peer = new Peer(hostPeerId, PEER_CONFIG);
+
+    this.peer.on('error', (err) => {
+      if (err.type === 'unavailable-id') {
+        // Peer ID already claimed or stale, retry after cleanup
+        setTimeout(() => {
+          if (this.peer && !this.peer.destroyed) {
+            this.peer.destroy();
+          }
+          this.initHostPeer(hostPeerId);
+        }, 1500);
+      }
+    });
+
+    this.setupHostListeners();
+  }
+
+  private initGuestPeer(hostPeerId: string, roomId: string) {
+    this.peer = new Peer(PEER_CONFIG);
+
+    const connectToHost = () => {
+      if (!this.peer || this.peer.destroyed) return;
+      if (this.hostConnection && this.hostConnection.open) return;
+      if (this.isConnectingHost) return;
+
+      try {
+        this.isConnectingHost = true;
+        const conn = this.peer.connect(hostPeerId, { reliable: true });
+        this.hostConnection = conn;
+
+        conn.on('open', () => {
+          this.isConnectingHost = false;
+          // Send instant join & sync request over open data connection
+          const state = useRaceStore.getState();
+          const localPlayer = state.players[state.localPlayerId];
+          if (localPlayer) {
+            conn.send(JSON.stringify({
+              event: 'join_room',
+              payload: { roomId, player: localPlayer }
+            }));
+            conn.send(JSON.stringify({
+              event: 'request_sync',
+              payload: { roomId, requesterId: state.localPlayerId }
+            }));
+          }
+          this.announceJoin(roomId);
+        });
+
+        conn.on('data', (data) => {
+          try {
+            const msg = JSON.parse(data as string) as RealtimeMessage;
+            this.handleIncomingMessage(msg);
+          } catch {
+            // ignore
+          }
+        });
+
+        conn.on('error', () => {
+          this.isConnectingHost = false;
+          this.hostConnection = null;
+        });
+
+        conn.on('close', () => {
+          this.isConnectingHost = false;
+          this.hostConnection = null;
+        });
+      } catch {
+        this.isConnectingHost = false;
+        this.hostConnection = null;
+      }
+    };
+
+    this.peer.on('open', () => {
+      connectToHost();
+    });
+
+    this.peer.on('error', () => {
+      this.isConnectingHost = false;
+      this.hostConnection = null;
+    });
+
+    // Periodic check & auto-host failover if no host exists after 3.5s
+    this.syncTimer = setInterval(() => {
+      const s = useRaceStore.getState();
+      const hasOtherPlayers = Object.keys(s.players).length > 1;
+      const timeElapsed = Date.now() - this.joinAttemptStartTime;
+
+      if (!hasOtherPlayers && !s.hostId && timeElapsed > 3500) {
+        // No host responded to this room code - claim host role so room works cleanly
+        useRaceStore.setState({ hostId: s.localPlayerId });
+        if (s.players[s.localPlayerId]) {
+          useRaceStore.setState({
+            players: {
+              ...s.players,
+              [s.localPlayerId]: { ...s.players[s.localPlayerId], isHost: true }
+            }
+          });
+        }
+        this.initHostPeer(hostPeerId);
+        return;
+      }
+
+      if (!this.hostConnection || !this.hostConnection.open) {
+        connectToHost();
+      }
+    }, 1500);
+  }
+
   private setupHostListeners() {
     if (!this.peer) return;
     this.peer.on('connection', (conn) => {
       this.peerConnections.set(conn.peer, conn);
 
-      conn.on('open', () => {
-        // Send state sync when new guest connects
+      const sendCurrentState = () => {
         const state = useRaceStore.getState();
-        conn.send(JSON.stringify({
-          event: 'sync_state',
-          payload: {
-            roomId: this.currentRoomId,
-            players: state.players,
-            targetText: state.targetText,
-            status: state.status,
-            hostId: state.hostId
-          }
-        }));
-      });
+        if (conn.open) {
+          conn.send(JSON.stringify({
+            event: 'sync_state',
+            payload: {
+              roomId: this.currentRoomId,
+              players: state.players,
+              targetText: state.targetText,
+              status: state.status,
+              hostId: state.hostId
+            }
+          }));
+        }
+      };
+
+      if (conn.open) {
+        sendCurrentState();
+      } else {
+        conn.on('open', () => {
+          sendCurrentState();
+        });
+      }
 
       conn.on('data', (data) => {
         try {
           const msg = JSON.parse(data as string) as RealtimeMessage;
           this.handleIncomingMessage(msg);
 
-          // Host relays message to all other guests
+          // Host relays message to all other connected guests
           this.peerConnections.forEach((otherConn, pid) => {
             if (pid !== conn.peer && otherConn.open) {
               otherConn.send(data as string);
@@ -186,6 +263,9 @@ class RealtimeService {
       });
 
       conn.on('close', () => {
+        this.peerConnections.delete(conn.peer);
+      });
+      conn.on('error', () => {
         this.peerConnections.delete(conn.peer);
       });
     });
@@ -217,6 +297,7 @@ class RealtimeService {
   }
 
   public disconnect() {
+    this.isConnectingHost = false;
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
@@ -367,7 +448,7 @@ class RealtimeService {
             event: 'sync_state',
             payload: {
               roomId: this.currentRoomId,
-              players: state.players,
+              players: useRaceStore.getState().players,
               targetText: state.targetText,
               status: state.status,
               hostId: state.hostId
@@ -388,7 +469,7 @@ class RealtimeService {
             event: 'sync_state',
             payload: {
               roomId: this.currentRoomId,
-              players: state.players,
+              players: useRaceStore.getState().players,
               targetText: state.targetText,
               status: state.status,
               hostId: state.hostId
@@ -401,7 +482,7 @@ class RealtimeService {
       case 'sync_state': {
         const { players, targetText, status, hostId } = msg.payload;
         useRaceStore.setState({
-          players: { ...state.players, ...players },
+          players: { ...useRaceStore.getState().players, ...players },
           targetText,
           status,
           hostId
@@ -453,3 +534,4 @@ class RealtimeService {
 }
 
 export const realtimeService = new RealtimeService();
+

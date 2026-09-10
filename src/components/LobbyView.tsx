@@ -104,8 +104,9 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
             </span>
           )}
           {!isSinglePlayer && (
-            <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-2 py-0.5 rounded border border-[var(--border-main)] font-mono">
-              pemain: {playerList.length}/{MAX_PLAYERS_PER_ROOM}
+            <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-2 py-0.5 rounded border border-[var(--border-main)] font-mono flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${playerList.length > 1 || isHost ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-ping'}`} />
+              {playerList.length > 1 || isHost ? `pemain: ${playerList.length}/${MAX_PLAYERS_PER_ROOM}` : 'menghubungkan ke room...'}
             </span>
           )}
         </div>

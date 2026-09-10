@@ -127,6 +127,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     set({
       roomId,
       status: 'LOBBY',
+      hostId: '',
       players: { [localPlayerId]: mePlayer },
       isSinglePlayer: false
     });
