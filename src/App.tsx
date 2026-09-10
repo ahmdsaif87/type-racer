@@ -88,6 +88,8 @@ export function App() {
     }
   }, [targetText, setTargetText]);
 
+  const isLocalPlayerFinished = useTypingStore((state) => state.isFinished);
+
   // Broadcast typing progress to room real-time channel
   const handleTypingProgress = () => {
     if (status !== 'IN_RACE') return;
@@ -101,9 +103,6 @@ export function App() {
 
     if (typingState.isFinished || typingState.progress >= 100) {
       realtimeService.broadcastProgress(100, typingState.netWpm, typingState.accuracy, true, Date.now());
-      setTimeout(() => {
-        realtimeService.broadcastRoomStateChange('FINISHED', targetText);
-      }, 250);
     }
   };
 
@@ -239,8 +238,14 @@ export function App() {
                 <TelemetryHUD />
                 <RaceTrack players={playerList} currentPlayerId={localPlayerId} />
                 <TypingBox
-                  isDisabled={status === 'COUNTDOWN'}
-                  disabledReason="waiting for race..."
+                  isDisabled={status === 'COUNTDOWN' || (status === 'IN_RACE' && isLocalPlayerFinished)}
+                  disabledReason={
+                    status === 'COUNTDOWN'
+                      ? 'waiting for race...'
+                      : isLocalPlayerFinished
+                        ? (uiLanguage === 'id' ? 'selesai! menunggu pemain lain finish...' : 'finished! waiting for other players...')
+                        : undefined
+                  }
                   onTypingProgress={handleTypingProgress}
                 />
               </div>

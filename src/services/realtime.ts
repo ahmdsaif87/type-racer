@@ -296,8 +296,42 @@ class RealtimeService {
     }
   }
 
+  private finishTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+  private checkAllFinished() {
+    const state = useRaceStore.getState();
+    if (state.status !== 'IN_RACE') return;
+
+    const playerList = Object.values(state.players);
+    if (playerList.length === 0) return;
+
+    const allFinished = state.isSinglePlayer || playerList.every(p => p.isFinished || p.progress >= 100);
+    const finishedCount = playerList.filter(p => p.isFinished || p.progress >= 100).length;
+
+    if (allFinished) {
+      if (this.finishTimeoutTimer) {
+        clearTimeout(this.finishTimeoutTimer);
+        this.finishTimeoutTimer = null;
+      }
+      this.broadcastRoomStateChange('FINISHED', state.targetText);
+    } else if (finishedCount >= 1 && !this.finishTimeoutTimer && !state.isSinglePlayer) {
+      // 30-second safety timeout if a player drops connection or takes too long
+      this.finishTimeoutTimer = setTimeout(() => {
+        const currentState = useRaceStore.getState();
+        if (currentState.status === 'IN_RACE') {
+          this.broadcastRoomStateChange('FINISHED', currentState.targetText);
+        }
+        this.finishTimeoutTimer = null;
+      }, 30000);
+    }
+  }
+
   public disconnect() {
     this.isConnectingHost = false;
+    if (this.finishTimeoutTimer) {
+      clearTimeout(this.finishTimeoutTimer);
+      this.finishTimeoutTimer = null;
+    }
     if (this.syncTimer) {
       clearInterval(this.syncTimer);
       this.syncTimer = null;
@@ -355,9 +389,18 @@ class RealtimeService {
         finishTime
       }
     });
+
+    if (isFinished) {
+      this.checkAllFinished();
+    }
   }
 
   public broadcastRoomStateChange(status: RoomStatus, targetText: string, countdownSec?: number) {
+    if (this.finishTimeoutTimer) {
+      clearTimeout(this.finishTimeoutTimer);
+      this.finishTimeoutTimer = null;
+    }
+
     const state = useRaceStore.getState();
     state.setRoomStatus(status);
 
@@ -500,6 +543,7 @@ class RealtimeService {
           isFinished,
           finishTime
         });
+        this.checkAllFinished();
         break;
       }
 
@@ -527,6 +571,7 @@ class RealtimeService {
 
       case 'player_leave': {
         state.removePlayer(msg.payload.playerId);
+        this.checkAllFinished();
         break;
       }
     }
