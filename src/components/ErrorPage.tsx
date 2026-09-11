@@ -26,7 +26,7 @@ export const ErrorPage: React.FC<ErrorPageProps> = ({
   return (
     <div className="w-full max-w-md mx-auto py-12 px-4 font-mono text-center select-none space-y-6">
       {/* Icon Badge */}
-      <div className="w-20 h-20 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.15)] animate-bounce">
+      <div className="w-20 h-20 mx-auto rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.2)] animate-pulse">
         <AlertTriangle className="w-10 h-10" />
       </div>
 

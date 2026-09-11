@@ -36,7 +36,12 @@ export const CountdownOverlay: React.FC = () => {
   }, [isHost, targetText]);
 
   return (
-    <div className="fixed inset-0 bg-[var(--bg-main)]/95 z-50 flex items-center justify-center font-mono select-none backdrop-blur-sm">
+    <div
+      role="status"
+      aria-live="assertive"
+      aria-atomic="true"
+      className="fixed inset-0 bg-[var(--bg-main)]/95 z-50 flex items-center justify-center font-mono select-none backdrop-blur-sm"
+    >
       <div className="text-center bg-[var(--bg-card)] border border-[var(--border-main)] p-10 rounded-2xl shadow-2xl">
         <span
           key={count}

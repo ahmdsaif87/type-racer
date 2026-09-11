@@ -40,6 +40,25 @@ export const TypingBox: React.FC<TypingBoxProps> = ({
   useEffect(() => {
     if (!isDisabled && !isFinished && !isRestartFocused) {
       inputRef.current?.focus();
+      setIsFocused(true);
+
+      const timer = setTimeout(() => {
+        if (inputRef.current && !isDisabled && !isFinished && !isRestartFocused) {
+          inputRef.current.focus();
+          setIsFocused(true);
+        }
+      }, 30);
+
+      const raf = requestAnimationFrame(() => {
+        if (inputRef.current && !isDisabled && !isFinished && !isRestartFocused) {
+          inputRef.current.focus();
+        }
+      });
+
+      return () => {
+        clearTimeout(timer);
+        cancelAnimationFrame(raf);
+      };
     }
   }, [isDisabled, isFinished, isRestartFocused]);
 
@@ -102,6 +121,11 @@ export const TypingBox: React.FC<TypingBoxProps> = ({
       soundEngine.playKeyPress();
       restartBtnRef.current?.focus();
       setIsRestartFocused(true);
+    } else if (e.key === ' ') {
+      const state = useTypingStore.getState();
+      if (state.hasError || state.userInput.length > state.correctCharIndex) {
+        soundEngine.playError();
+      }
     }
   };
 

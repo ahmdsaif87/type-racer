@@ -76,7 +76,7 @@ export const RaceTrack: React.FC<RaceTrackProps> = ({ players, currentPlayerId }
               {/* Car Track Lane */}
               <div className="relative flex-1 h-full mx-2 flex items-center">
                 <div
-                  className="absolute transition-all duration-150 ease-out flex items-center"
+                  className="absolute transition-all duration-100 ease-out flex items-center"
                   style={{
                     left: `calc(${Math.min(96, Math.max(0, player.progress))}% - ${player.progress > 85 ? '40px' : '0px'})`
                   }}

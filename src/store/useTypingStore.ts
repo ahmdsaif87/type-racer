@@ -17,6 +17,8 @@ interface TypingState {
   hasError: boolean;
   wpmHistory: number[];
   consistency: number;
+  keyStats: Record<string, { totalTimeMs: number; count: number; errorCount: number }>;
+  lastKeyTime: number | null;
   
   // Actions
   setTargetText: (text: string) => void;
@@ -41,6 +43,8 @@ export const useTypingStore = create<TypingState>((set, get) => ({
   hasError: false,
   wpmHistory: [],
   consistency: 100,
+  keyStats: {},
+  lastKeyTime: null,
 
   setTargetText: (text: string) => {
     set({
@@ -59,6 +63,8 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       hasError: false,
       wpmHistory: [],
       consistency: 100,
+      keyStats: {},
+      lastKeyTime: null,
     });
   },
 
@@ -79,6 +85,8 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       hasError: false,
       wpmHistory: [],
       consistency: 100,
+      keyStats: {},
+      lastKeyTime: null,
       targetText,
     });
   },
@@ -111,11 +119,30 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       }
     }
 
+    // Typo Blocker: Prevent skipping words if there is an uncorrected error or mistyped initial letter
+    let finalValue = sanitizedValue;
+    if (sanitizedValue.endsWith(' ') && (currentHasError || correctCount < sanitizedValue.length - 1)) {
+      // Strip trailing spaces to block skipping words until typo is fixed with Backspace
+      finalValue = sanitizedValue.replace(/\s+$/, '');
+      
+      // Re-evaluate correctCount and currentHasError for finalValue
+      correctCount = 0;
+      currentHasError = false;
+      for (let i = 0; i < finalValue.length; i++) {
+        if (i < state.targetText.length && finalValue[i] === state.targetText[i]) {
+          correctCount++;
+        } else {
+          currentHasError = true;
+          break;
+        }
+      }
+    }
+
     let errorCount = state.errorCount;
     if (currentHasError) {
       errorCount++;
       soundEngine.playError();
-    } else if (sanitizedValue.length > state.userInput.length) {
+    } else if (finalValue.length > state.userInput.length) {
       soundEngine.playKeyPress();
     }
 
@@ -164,8 +191,26 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       soundEngine.playFinishChime();
     }
 
+    // Key latency and error tracking for Heatmap Analysis
+    const lastKeyTime = state.lastKeyTime ?? now;
+    const timeDiffMs = Math.min(1500, Math.max(20, now - lastKeyTime));
+    const nextKeyStats = { ...state.keyStats };
+
+    if (finalValue.length > state.userInput.length) {
+      const typedChar = finalValue[finalValue.length - 1];
+      if (typedChar && typedChar.length === 1) {
+        const keyName = typedChar === ' ' ? 'SPACE' : typedChar.toUpperCase();
+        const existingKey = nextKeyStats[keyName] || { totalTimeMs: 0, count: 0, errorCount: 0 };
+        nextKeyStats[keyName] = {
+          totalTimeMs: existingKey.totalTimeMs + timeDiffMs,
+          count: existingKey.count + 1,
+          errorCount: existingKey.errorCount + (currentHasError ? 1 : 0)
+        };
+      }
+    }
+
     set({
-      userInput: sanitizedValue,
+      userInput: finalValue,
       correctCharIndex: correctCount,
       totalKeystrokes,
       errorCount,
@@ -179,6 +224,8 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       hasError: currentHasError,
       wpmHistory: currentWpmHistory,
       consistency,
+      keyStats: nextKeyStats,
+      lastKeyTime: now,
     });
   },
 

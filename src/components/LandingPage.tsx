@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CAR_COLORS } from '../data/texts';
 import type { CarColorId } from '../types/game';
 import { CarAvatar } from './CarAvatar';
+import { TypewriterText } from './TypewriterText';
 import { useRaceStore } from '../store/useRaceStore';
 import { soundEngine } from '../services/audio';
 import { UI_STRINGS } from '../data/i18n';
@@ -79,9 +80,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onStartRace, onOpenCom
   return (
     <div className="w-full max-w-lg mx-auto py-8 px-4 font-mono select-none">
       {/* Logo Title */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-[var(--accent-main)] drop-shadow-[0_0_12px_var(--accent-glow)] mb-1">
-          {strings.appTitle}
+      <div className="text-center mb-8 min-h-[70px] flex flex-col items-center justify-center">
+        <h1 className="text-3xl sm:text-4xl font-bold tracking-tight text-[var(--accent-main)] drop-shadow-[0_0_14px_var(--accent-glow)] mb-1">
+          <TypewriterText />
         </h1>
         <p className="text-xs text-[var(--text-typed)]/70">
           {strings.tagline}

@@ -4,8 +4,7 @@ import { useTypingStore } from './store/useTypingStore';
 import { realtimeService } from './services/realtime';
 import { soundEngine } from './services/audio';
 import { getRandomText } from './data/texts';
-
-// Components
+import { Volume2, VolumeX, Sun, Moon, Globe } from 'lucide-react';
 import { LandingPage } from './components/LandingPage';
 import { LobbyView } from './components/LobbyView';
 import { RaceTrack } from './components/RaceTrack';
@@ -116,6 +115,23 @@ export function App() {
   useEffect(() => {
     document.documentElement.lang = uiLanguage;
   }, [uiLanguage]);
+
+  // Dynamic Document Title based on view & race status
+  useEffect(() => {
+    if (view === 'RACE_ROOM') {
+      if (status === 'COUNTDOWN') {
+        document.title = 'Get Ready! | TypeRacer Blitz';
+      } else if (status === 'IN_RACE') {
+        document.title = 'Racing... | TypeRacer Blitz';
+      } else if (status === 'FINISHED') {
+        document.title = 'Race Finished! | TypeRacer Blitz';
+      } else {
+        document.title = 'Race Room | TypeRacer Blitz';
+      }
+    } else {
+      document.title = 'TypeRacer Blitz - Realtime Multiplayer Typing Arcade';
+    }
+  }, [view, status]);
 
   // Sync Typing Engine target text when room target text changes
   useEffect(() => {
@@ -284,26 +300,47 @@ export function App() {
         </div>
 
         {/* Audio, Theme & Language Controls */}
-        <div className="flex items-center gap-3 sm:gap-4 text-xs text-[var(--accent-main)] font-mono">
+        <div className="flex items-center gap-2 sm:gap-3 text-xs text-[var(--accent-main)] font-mono">
           <button
             onClick={handleToggleLanguage}
-            className="hover:underline font-bold uppercase tracking-wider"
+            className="px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-main)] hover:border-[var(--accent-main)] hover:text-[var(--accent-main)] transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)]"
+            title={uiLanguage === 'id' ? 'Ganti Bahasa (ID/EN)' : 'Switch Language (ID/EN)'}
           >
-            lang: {uiLanguage}
+            <Globe className="w-3.5 h-3.5 text-[var(--accent-main)]" />
+            <span className="font-bold uppercase">{uiLanguage}</span>
           </button>
 
           <button
             onClick={handleToggleTheme}
-            className="hover:underline font-bold"
+            className="px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border border-[var(--border-main)] hover:border-[var(--accent-main)] hover:text-[var(--accent-main)] transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)]"
+            title={theme === 'dark' ? 'Mode Terang' : 'Mode Gelap'}
           >
-            theme: {theme}
+            {theme === 'dark' ? (
+              <Moon className="w-3.5 h-3.5 text-[var(--accent-main)]" />
+            ) : (
+              <Sun className="w-3.5 h-3.5 text-[var(--accent-main)]" />
+            )}
+            <span className="font-bold capitalize hidden sm:inline">{theme}</span>
           </button>
 
+          {/* Mini Sound Toggle Button */}
           <button
             onClick={handleToggleMute}
-            className="hover:underline font-bold"
+            className={`px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)] ${
+              isMuted
+                ? 'border-[var(--error-color)] text-[var(--error-color)]'
+                : 'border-[var(--border-main)] hover:border-[var(--accent-main)]'
+            }`}
+            title={isMuted ? (uiLanguage === 'id' ? 'Aktifkan Suara' : 'Unmute Sound') : (uiLanguage === 'id' ? 'Matikan Suara' : 'Mute Sound')}
           >
-            {isMuted ? 'sound: off' : 'sound: on'}
+            {isMuted ? (
+              <VolumeX className="w-4 h-4 text-[var(--error-color)]" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-[var(--accent-main)]" />
+            )}
+            <span className="font-bold text-[11px] sm:text-xs">
+              {isMuted ? (uiLanguage === 'id' ? 'bisu' : 'muted') : (uiLanguage === 'id' ? 'suara' : 'sound')}
+            </span>
           </button>
         </div>
       </header>

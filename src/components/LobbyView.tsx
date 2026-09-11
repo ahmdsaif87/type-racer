@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRaceStore, MAX_PLAYERS_PER_ROOM } from '../store/useRaceStore';
 import { useTypingStore } from '../store/useTypingStore';
 import { realtimeService } from '../services/realtime';
@@ -7,6 +7,7 @@ import type { TextLanguage, TextLength } from '../types/game';
 import { soundEngine } from '../services/audio';
 import { UI_STRINGS } from '../data/i18n';
 import { getRandomText } from '../data/texts';
+import { Copy, Check, Info } from 'lucide-react';
 
 interface LobbyViewProps {
   onLeaveLobby: () => void;
@@ -34,11 +35,26 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
   const isHost = localPlayerId === hostId;
   const playerList = Object.values(players);
 
+  // Power User Shortcut: Ctrl+Enter or Cmd+Enter to start race as Host
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isHost && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleStartRace();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isHost, targetText]);
+
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(roomId);
+    const shareUrl = isSinglePlayer 
+      ? roomId 
+      : `${window.location.origin}/race/${roomId}`;
+    navigator.clipboard.writeText(shareUrl);
     setCopied(true);
     soundEngine.playKeyPress();
-    setTimeout(() => setCopied(false), 2000);
+    setTimeout(() => setCopied(false), 2500);
   };
 
   const handleLanguageChange = (lang: TextLanguage) => {
@@ -84,11 +100,22 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
     realtimeService.broadcastRoomStateChange('COUNTDOWN', targetText, 3);
   };
 
+  const handleToggleReady = () => {
+    const me = players[localPlayerId];
+    if (!me) return;
+    soundEngine.playKeyPress();
+    const nextReady = !me.isReady;
+    useRaceStore.getState().updatePlayer(localPlayerId, { isReady: nextReady });
+    realtimeService.broadcastProgress(me.progress, me.wpm, me.accuracy, me.isFinished);
+  };
+
+  const readyCount = playerList.filter(p => p.isReady || p.isHost).length;
+
   return (
     <div className="w-full mx-auto space-y-5 font-mono select-none">
       {/* Room Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-4 shadow-md">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={onLeaveLobby}
             className="text-xs text-[var(--text-muted)] hover:text-[var(--accent-main)] transition-colors"
@@ -114,12 +141,103 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
         {!isSinglePlayer && (
           <button
             onClick={handleCopyLink}
-            className="text-xs text-[var(--accent-main)] hover:underline font-bold"
+            className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm ${
+              copied
+                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                : 'bg-[var(--bg-input)] border-[var(--border-main)] hover:border-[var(--accent-main)] text-[var(--accent-main)]'
+            }`}
+            title="Salin Link Undangan Balapan"
           >
-            {copied ? strings.linkCopied : strings.copyLink}
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{strings.linkCopied || 'Tersalin!'}</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span>{strings.copyLink || 'Salin Undangan'}</span>
+              </>
+            )}
           </button>
         )}
       </div>
+
+      {/* P2P Multi-Player Guidance Badge */}
+      {!isSinglePlayer && playerList.length <= 1 && (
+        <div className="flex items-center gap-2 bg-[var(--bg-card)] border border-[var(--border-main)] rounded-lg px-3.5 py-2 text-[11px] text-[var(--text-muted)] shadow-sm">
+          <Info className="w-4 h-4 text-[var(--accent-main)] shrink-0" />
+          <span>
+            {uiLanguage === 'id'
+              ? 'Bagikan link room atau kode di atas ke teman untuk balapan multiplayer secara real-time.'
+              : 'Share the room link or code above with friends for real-time multiplayer racing.'}
+          </span>
+        </div>
+      )}
+
+      {/* Player Roster Card with Ready Badges */}
+      {!isSinglePlayer && (
+        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3.5 space-y-2.5 shadow-md">
+          <div className="flex items-center justify-between text-xs text-[var(--accent-main)] font-bold border-b border-[var(--border-main)] pb-2">
+            <span className="uppercase tracking-wider">Status Pemain ({playerList.length}/{MAX_PLAYERS_PER_ROOM})</span>
+            <span className="text-emerald-400">{readyCount}/{playerList.length} Ready</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {playerList.map((p) => {
+              const isMe = p.id === localPlayerId;
+              const isReady = p.isReady ?? true;
+
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
+                    isMe
+                      ? 'bg-[var(--bg-input)] border-[var(--accent-main)] shadow-sm'
+                      : 'bg-[var(--bg-main)] border-[var(--border-main)]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <span className={`w-2.5 h-2.5 rounded-full ${isReady || p.isHost ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400 animate-pulse'}`} />
+                    <span className={`text-xs truncate ${isMe ? 'font-bold text-[var(--text-typed)]' : 'text-[var(--text-muted)]'}`}>
+                      {p.name} {isMe && '(Anda)'}
+                    </span>
+                    {p.isHost && (
+                      <span className="text-[9px] bg-[var(--accent-main)]/20 text-[var(--accent-main)] px-1.5 py-0.2 rounded font-bold uppercase">
+                        host
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Ready Badge / Toggle Button */}
+                  {isMe && !p.isHost ? (
+                    <button
+                      onClick={handleToggleReady}
+                      className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all shadow-sm ${
+                        isReady
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30'
+                      }`}
+                    >
+                      {isReady ? '✓ SIAP' : 'BELUM SIAP'}
+                    </button>
+                  ) : (
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded ${
+                        isReady || p.isHost
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}
+                    >
+                      {isReady || p.isHost ? '✓ SIAP' : 'BELUM SIAP'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Mode Bar */}
       <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3 flex flex-wrap items-center justify-center gap-6 text-xs text-[var(--text-muted)]">
@@ -193,9 +311,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
         {isHost ? (
           <button
             onClick={handleStartRace}
-            className="w-full py-3.5 rounded-xl bg-[var(--accent-main)] hover:brightness-110 text-slate-950 font-extrabold text-sm transition-all shadow-md"
+            className="w-full py-3.5 rounded-xl bg-[var(--accent-main)] hover:brightness-110 text-slate-950 font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-1.5"
           >
-            {strings.startRace}
+            <span>{strings.startRace}</span>
+            <span className="text-xs font-semibold opacity-80">(ctrl + enter)</span>
           </button>
         ) : (
           <div className="w-full py-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--accent-main)] text-xs text-center animate-pulse">

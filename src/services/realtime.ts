@@ -366,7 +366,7 @@ class RealtimeService {
 
   public broadcastProgress(progress: number, wpm: number, accuracy: number, isFinished: boolean, finishTime?: number) {
     const now = Date.now();
-    if (!isFinished && now - this.lastProgressBroadcast < 150) {
+    if (!isFinished && progress < 100 && now - this.lastProgressBroadcast < 80) {
       return;
     }
 
