@@ -180,9 +180,10 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
     state.resetRaceRoom();
     useTypingStore.getState().resetTyping();
 
-    const isLocalHost = state.hostId === state.localPlayerId;
-    if (isLocalHost && !state.isSinglePlayer) {
-      realtimeService.broadcastRoomStateChange('LOBBY', state.targetText);
+    const newState = useRaceStore.getState();
+    const isLocalHost = newState.hostId === newState.localPlayerId;
+    if (isLocalHost && !newState.isSinglePlayer) {
+      realtimeService.broadcastRoomStateChange('LOBBY', newState.targetText);
     }
     onReturnToLobby();
   };
@@ -190,14 +191,19 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
   const handleRematch = () => {
     if (!canRematch) return;
     soundEngine.playKeyPress();
-    const state = useRaceStore.getState();
-    state.resetRaceRoom();
+
+    useRaceStore.getState().resetRaceRoom();
     useTypingStore.getState().resetTyping();
 
-    if (state.isSinglePlayer) {
-      realtimeService.broadcastRoomStateChange('COUNTDOWN', state.targetText, 3);
+    const newState = useRaceStore.getState();
+    if (newState.isSinglePlayer) {
+      realtimeService.broadcastRoomStateChange('COUNTDOWN', newState.targetText, 3);
     } else {
-      handleReturnAction();
+      const isLocalHost = newState.hostId === newState.localPlayerId;
+      if (isLocalHost) {
+        realtimeService.broadcastRoomStateChange('LOBBY', newState.targetText);
+      }
+      onReturnToLobby();
     }
   };
 
@@ -250,26 +256,21 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
         
         {/* Header - Winner Banner & Match Summary */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-[var(--border-main)] pb-5 gap-3">
-          <div className="flex items-center gap-3">
-            {/* Cleaned Trophy Container without SVG bounding box glitch */}
-            <div className="p-2.5 sm:p-3 rounded-xl bg-[var(--bg-input)] border border-[var(--border-main)] text-[var(--accent-main)] shadow-[0_0_12px_var(--accent-glow)] flex items-center justify-center">
-              <Trophy className="w-6 h-6 sm:w-7 sm:h-7 text-[var(--accent-main)]" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs uppercase tracking-widest text-[var(--accent-main)] font-bold">
-                  {myRank === 1 ? (strings.firstPlace || '#1 PLACE - CHAMPION!') : `#${myRank} ${strings.place || 'PLACE'}`}
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-widest text-[var(--accent-main)] font-bold">
+                {myRank === 1 ? (strings.firstPlace || '#1 PLACE - CHAMPION!') : `#${myRank} ${strings.place || 'PLACE'}`}
+              </span>
+              {winner && (
+                <span className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-input)] px-2.5 py-0.5 rounded border border-[var(--border-main)] font-mono">
+                  {strings.winner}: <strong className="text-[var(--accent-main)]">{winner.name}</strong> ({winner.wpm} wpm)
                 </span>
-                {winner && (
-                  <span className="text-[11px] text-[var(--text-muted)] bg-[var(--bg-input)] px-2.5 py-0.5 rounded border border-[var(--border-main)] font-mono">
-                    {strings.winner}: <strong className="text-[var(--accent-main)]">{winner.name}</strong> ({winner.wpm} wpm)
-                  </span>
-                )}
-              </div>
-              <h2 className="text-xl sm:text-3xl font-bold text-[var(--text-typed)] tracking-tight">
-                {strings.raceResults}
-              </h2>
+              )}
             </div>
+            <h2 className="text-xl sm:text-3xl font-bold text-[var(--text-typed)] tracking-tight flex items-center gap-2.5">
+              <Trophy className="w-6 h-6 sm:w-7 sm:h-7 text-[var(--accent-main)] inline-block shrink-0" />
+              <span>{strings.raceResults}</span>
+            </h2>
           </div>
 
           <div className="flex items-center gap-3 self-end sm:self-center">
@@ -614,9 +615,9 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
             {canRematch ? (
               <span className="flex items-center gap-1.5">
                 <kbd className="px-2 py-0.5 rounded bg-[var(--bg-input)] border border-[var(--border-main)] text-[var(--accent-main)] font-bold">tab + enter</kbd>
-                <span>atau</span>
+                <span>{strings.or}</span>
                 <kbd className="px-2 py-0.5 rounded bg-[var(--bg-input)] border border-[var(--border-main)] text-[var(--accent-main)] font-bold">r</kbd>
-                <span>- restart / next test</span>
+                <span>{strings.restartNextTest}</span>
               </span>
             ) : (
               <span className="text-[var(--accent-main)] font-semibold animate-pulse flex items-center gap-1.5">
@@ -638,7 +639,7 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
                 </button>
 
                 <button
-                  onClick={onReturnToLobby}
+                  onClick={handleReturnAction}
                   className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-[var(--bg-input)] hover:bg-[var(--border-main)] text-[var(--text-typed)] font-bold text-xs transition-all border border-[var(--border-main)] flex items-center justify-center gap-2"
                 >
                   <Home className="w-4 h-4 text-[var(--text-muted)]" />
@@ -647,7 +648,7 @@ export const PostRaceModal: React.FC<PostRaceModalProps> = ({ onReturnToLobby })
               </>
             ) : (
               <button
-                onClick={onReturnToLobby}
+                onClick={handleReturnAction}
                 className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-[var(--bg-input)] hover:bg-[var(--border-main)] text-[var(--text-typed)] font-bold text-xs transition-all border border-[var(--border-main)] flex items-center justify-center gap-2"
               >
                 <Home className="w-4 h-4 text-[var(--text-muted)]" />

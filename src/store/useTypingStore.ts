@@ -119,21 +119,23 @@ export const useTypingStore = create<TypingState>((set, get) => ({
       }
     }
 
-    // Typo Blocker: Prevent skipping words if there is an uncorrected error or mistyped initial letter
     let finalValue = sanitizedValue;
-    if (sanitizedValue.endsWith(' ') && (currentHasError || correctCount < sanitizedValue.length - 1)) {
-      // Strip trailing spaces to block skipping words until typo is fixed with Backspace
-      finalValue = sanitizedValue.replace(/\s+$/, '');
-      
-      // Re-evaluate correctCount and currentHasError for finalValue
-      correctCount = 0;
-      currentHasError = false;
-      for (let i = 0; i < finalValue.length; i++) {
-        if (i < state.targetText.length && finalValue[i] === state.targetText[i]) {
-          correctCount++;
-        } else {
-          currentHasError = true;
-          break;
+
+    // Cap maximum allowed error characters beyond first mistake (max 8 extra chars) to prevent excessive typos
+    const MAX_EXTRA_ERRORS = 8;
+    if (sanitizedValue.length > state.userInput.length && currentHasError) {
+      if (sanitizedValue.length > correctCount + MAX_EXTRA_ERRORS) {
+        finalValue = sanitizedValue.slice(0, correctCount + MAX_EXTRA_ERRORS);
+        // Re-evaluate correctCount and currentHasError for capped finalValue
+        correctCount = 0;
+        currentHasError = false;
+        for (let i = 0; i < finalValue.length; i++) {
+          if (i < state.targetText.length && finalValue[i] === state.targetText[i]) {
+            correctCount++;
+          } else {
+            currentHasError = true;
+            break;
+          }
         }
       }
     }

@@ -35,17 +35,21 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
   const isHost = localPlayerId === hostId;
   const playerList = Object.values(players);
 
+  const nonHostPlayers = playerList.filter(p => !p.isHost);
+  const allGuestsReady = isSinglePlayer || nonHostPlayers.length === 0 || nonHostPlayers.every(p => p.isReady);
+  const readyGuestsCount = nonHostPlayers.filter(p => p.isReady).length;
+
   // Power User Shortcut: Ctrl+Enter or Cmd+Enter to start race as Host
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (isHost && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if (isHost && allGuestsReady && (e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         handleStartRace();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isHost, targetText]);
+  }, [isHost, allGuestsReady, targetText]);
 
   const handleCopyLink = () => {
     const shareUrl = isSinglePlayer 
@@ -92,24 +96,22 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
     realtimeService.broadcastHostSettings(state.textLanguage, length, newText);
   };
 
+  const me = players[localPlayerId];
+  const isLocalReady = me?.isReady ?? false;
+
+  const handleToggleReady = () => {
+    soundEngine.playKeyPress();
+    const nextReady = !isLocalReady;
+    realtimeService.broadcastPlayerReady(nextReady);
+  };
+
   const handleStartRace = () => {
-    if (!isHost) return;
+    if (!isHost || !allGuestsReady) return;
     soundEngine.playKeyPress();
     useRaceStore.getState().setRoomStatus('COUNTDOWN');
     useTypingStore.getState().resetTyping();
     realtimeService.broadcastRoomStateChange('COUNTDOWN', targetText, 3);
   };
-
-  const handleToggleReady = () => {
-    const me = players[localPlayerId];
-    if (!me) return;
-    soundEngine.playKeyPress();
-    const nextReady = !me.isReady;
-    useRaceStore.getState().updatePlayer(localPlayerId, { isReady: nextReady });
-    realtimeService.broadcastProgress(me.progress, me.wpm, me.accuracy, me.isFinished);
-  };
-
-  const readyCount = playerList.filter(p => p.isReady || p.isHost).length;
 
   return (
     <div className="w-full mx-auto space-y-5 font-mono select-none">
@@ -133,7 +135,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
           {!isSinglePlayer && (
             <span className="text-[10px] text-[var(--text-muted)] bg-[var(--bg-input)] px-2 py-0.5 rounded border border-[var(--border-main)] font-mono flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${playerList.length > 1 || isHost ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-ping'}`} />
-              {playerList.length > 1 || isHost ? `pemain: ${playerList.length}/${MAX_PLAYERS_PER_ROOM}` : 'menghubungkan ke room...'}
+              {playerList.length > 1 || isHost ? `${strings.players}: ${playerList.length}/${MAX_PLAYERS_PER_ROOM}` : strings.connectingToRoom}
             </span>
           )}
         </div>
@@ -146,17 +148,17 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
                 ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
                 : 'bg-[var(--bg-input)] border-[var(--border-main)] hover:border-[var(--accent-main)] text-[var(--accent-main)]'
             }`}
-            title="Salin Link Undangan Balapan"
+            title={strings.copyInvite}
           >
             {copied ? (
               <>
                 <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{strings.linkCopied || 'Tersalin!'}</span>
+                <span>{strings.linkCopied || strings.inviteCopied}</span>
               </>
             ) : (
               <>
                 <Copy className="w-3.5 h-3.5" />
-                <span>{strings.copyLink || 'Salin Undangan'}</span>
+                <span>{strings.copyLink || strings.copyInvite}</span>
               </>
             )}
           </button>
@@ -168,74 +170,8 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
         <div className="flex items-center gap-2 bg-[var(--bg-card)] border border-[var(--border-main)] rounded-lg px-3.5 py-2 text-[11px] text-[var(--text-muted)] shadow-sm">
           <Info className="w-4 h-4 text-[var(--accent-main)] shrink-0" />
           <span>
-            {uiLanguage === 'id'
-              ? 'Bagikan link room atau kode di atas ke teman untuk balapan multiplayer secara real-time.'
-              : 'Share the room link or code above with friends for real-time multiplayer racing.'}
+            {strings.multiplayerGuidance}
           </span>
-        </div>
-      )}
-
-      {/* Player Roster Card with Ready Badges */}
-      {!isSinglePlayer && (
-        <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3.5 space-y-2.5 shadow-md">
-          <div className="flex items-center justify-between text-xs text-[var(--accent-main)] font-bold border-b border-[var(--border-main)] pb-2">
-            <span className="uppercase tracking-wider">Status Pemain ({playerList.length}/{MAX_PLAYERS_PER_ROOM})</span>
-            <span className="text-emerald-400">{readyCount}/{playerList.length} Ready</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {playerList.map((p) => {
-              const isMe = p.id === localPlayerId;
-              const isReady = p.isReady ?? true;
-
-              return (
-                <div
-                  key={p.id}
-                  className={`flex items-center justify-between p-2.5 rounded-lg border transition-all ${
-                    isMe
-                      ? 'bg-[var(--bg-input)] border-[var(--accent-main)] shadow-sm'
-                      : 'bg-[var(--bg-main)] border-[var(--border-main)]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 truncate">
-                    <span className={`w-2.5 h-2.5 rounded-full ${isReady || p.isHost ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400 animate-pulse'}`} />
-                    <span className={`text-xs truncate ${isMe ? 'font-bold text-[var(--text-typed)]' : 'text-[var(--text-muted)]'}`}>
-                      {p.name} {isMe && '(Anda)'}
-                    </span>
-                    {p.isHost && (
-                      <span className="text-[9px] bg-[var(--accent-main)]/20 text-[var(--accent-main)] px-1.5 py-0.2 rounded font-bold uppercase">
-                        host
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Ready Badge / Toggle Button */}
-                  {isMe && !p.isHost ? (
-                    <button
-                      onClick={handleToggleReady}
-                      className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all shadow-sm ${
-                        isReady
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30'
-                      }`}
-                    >
-                      {isReady ? '✓ SIAP' : 'BELUM SIAP'}
-                    </button>
-                  ) : (
-                    <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded ${
-                        isReady || p.isHost
-                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                          : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      }`}
-                    >
-                      {isReady || p.isHost ? '✓ SIAP' : 'BELUM SIAP'}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
         </div>
       )}
 
@@ -306,20 +242,48 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
       {/* Track Preview */}
       <RaceTrack players={playerList} currentPlayerId={localPlayerId} />
 
-      {/* Start Button */}
+      {/* Action Button: Start Race (Host) or Toggle Ready (Non-Host) */}
       <div className="pt-1">
         {isHost ? (
           <button
             onClick={handleStartRace}
-            className="w-full py-3.5 rounded-xl bg-[var(--accent-main)] hover:brightness-110 text-slate-950 font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-1.5"
+            disabled={!allGuestsReady}
+            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-1.5 ${
+              allGuestsReady
+                ? 'bg-[var(--accent-main)] hover:brightness-110 text-slate-950 cursor-pointer shadow-[0_0_15px_var(--accent-glow)]'
+                : 'bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--text-muted)] opacity-60 cursor-not-allowed'
+            }`}
           >
-            <span>{strings.startRace}</span>
-            <span className="text-xs font-semibold opacity-80">(ctrl + enter)</span>
+            {allGuestsReady ? (
+              <>
+                <span>{strings.startRace}</span>
+                <span className="text-xs font-semibold opacity-80">(ctrl + enter)</span>
+              </>
+            ) : (
+              <span>{strings.waitingForMembersReady.replace('{ready}', readyGuestsCount.toString()).replace('{total}', nonHostPlayers.length.toString())}</span>
+            )}
           </button>
         ) : (
-          <div className="w-full py-3 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--accent-main)] text-xs text-center animate-pulse">
-            {strings.waitingForHost}
-          </div>
+          <button
+            onClick={handleToggleReady}
+            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
+              isLocalReady
+                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30 shadow-[0_0_10px_rgba(52,211,153,0.2)]'
+                : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+            }`}
+          >
+            {isLocalReady ? (
+              <>
+                <span>{strings.iAmReadyBadge}</span>
+                <span className="text-xs opacity-80 font-semibold">{strings.clickToUnready}</span>
+              </>
+            ) : (
+              <>
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>{strings.iAmReady}</span>
+              </>
+            )}
+          </button>
         )}
       </div>
 

@@ -4,7 +4,7 @@ import { useTypingStore } from './store/useTypingStore';
 import { realtimeService } from './services/realtime';
 import { soundEngine } from './services/audio';
 import { getRandomText } from './data/texts';
-import { Volume2, VolumeX, Sun, Moon, Globe } from 'lucide-react';
+import { Volume2, VolumeX, Sun, Moon, Globe, Music } from 'lucide-react';
 import { LandingPage } from './components/LandingPage';
 import { LobbyView } from './components/LobbyView';
 import { RaceTrack } from './components/RaceTrack';
@@ -16,6 +16,7 @@ import { LoadingScreen } from './components/LoadingScreen';
 import { AntigravityParticles } from './components/AntigravityParticles';
 import { ErrorPage } from './components/ErrorPage';
 import { ComingSoonPage } from './components/ComingSoonPage';
+import { ProfileModal } from './components/ProfileModal';
 
 export function App() {
   const [view, setView] = useState<'LANDING' | 'RACE_ROOM' | 'ERROR' | 'COMING_SOON'>('LANDING');
@@ -23,10 +24,14 @@ export function App() {
   const [activeFeatureName, setActiveFeatureName] = useState<string>('');
   const [isInitialBoot, setIsInitialBoot] = useState<boolean>(true);
   const [isPageNavigating, setIsPageNavigating] = useState<boolean>(false);
+  const [pendingDirectRoomCode, setPendingDirectRoomCode] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(soundEngine.getIsMuted());
+  const [isBgmMuted, setIsBgmMuted] = useState<boolean>(soundEngine.getIsBgmMuted());
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     return (localStorage.getItem('typeracer_theme') as 'dark' | 'light') || 'dark';
   });
+
+
 
   const {
     status,
@@ -35,6 +40,7 @@ export function App() {
     targetText,
     uiLanguage,
     setUiLanguage,
+    setLocalPlayer,
     resetRaceRoom,
     createRoom
   } = useRaceStore();
@@ -53,7 +59,7 @@ export function App() {
     return () => clearTimeout(bootTimer);
   }, []);
 
-  // Set up room not found listener
+  // Set up room not found & kicked listeners
   useEffect(() => {
     realtimeService.setOnRoomNotFound((failedRoomId) => {
       setIsPageNavigating(false);
@@ -64,6 +70,19 @@ export function App() {
         message: uiLanguage === 'id'
           ? `Room dengan kode "${failedRoomId}" tidak ditemukan. Pastikan host telah membuat room tersebut.`
           : `Room with code "${failedRoomId}" was not found. Make sure the host has created the room.`
+      });
+      setView('ERROR');
+      window.history.pushState({}, '', '/');
+    });
+
+    realtimeService.setOnKicked(() => {
+      setIsPageNavigating(false);
+      resetRaceRoom();
+      resetTyping();
+      setErrorInfo({
+        message: uiLanguage === 'id'
+          ? 'Kamu telah dikeluarkan dari room oleh Host.'
+          : 'You were kicked from the room by the host.'
       });
       setView('ERROR');
       window.history.pushState({}, '', '/');
@@ -88,7 +107,12 @@ export function App() {
     if (path.startsWith('/race/')) {
       const extractedCode = path.replace('/race/', '').toUpperCase();
       if (extractedCode) {
-        handleEnterRaceRoom(extractedCode, false);
+        const hasAlias = !!localStorage.getItem('typeracer_alias');
+        if (!hasAlias) {
+          setPendingDirectRoomCode(extractedCode);
+        } else {
+          handleEnterRaceRoom(extractedCode, false);
+        }
       }
     }
   }, []);
@@ -250,17 +274,20 @@ export function App() {
     setIsMuted(muted);
   };
 
+  const handleToggleBgm = () => {
+    const bgmActive = soundEngine.toggleBgm();
+    setIsBgmMuted(!bgmActive);
+  };
+
   const handleToggleTheme = () => {
     const nextTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(nextTheme);
     localStorage.setItem('typeracer_theme', nextTheme);
-    soundEngine.playKeyPress();
   };
 
   const handleToggleLanguage = () => {
     const nextLang = uiLanguage === 'id' ? 'en' : 'id';
     setUiLanguage(nextLang);
-    soundEngine.playKeyPress();
 
     const state = useRaceStore.getState();
     if (state.status === 'LOBBY' && state.hostId === state.localPlayerId && state.textLanguage !== 'CUSTOM') {
@@ -323,15 +350,31 @@ export function App() {
             <span className="font-bold capitalize hidden sm:inline">{theme}</span>
           </button>
 
+          {/* Chill Backsound (BGM) Toggle Button */}
+          <button
+            onClick={handleToggleBgm}
+            className={`px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)] cursor-pointer ${
+              isBgmMuted
+                ? 'border-[var(--border-main)] text-[var(--text-muted)] opacity-60'
+                : 'border-[var(--accent-main)] text-[var(--accent-main)] shadow-[0_0_8px_var(--accent-glow)] font-bold'
+            }`}
+            title={isBgmMuted ? (uiLanguage === 'id' ? 'Aktifkan Backsound Chill' : 'Enable Chill Backsound') : (uiLanguage === 'id' ? 'Matikan Backsound' : 'Disable Backsound')}
+          >
+            <Music className={`w-3.5 h-3.5 ${!isBgmMuted ? 'animate-pulse text-[var(--accent-main)]' : 'text-[var(--text-muted)]'}`} />
+            <span className="font-bold text-[11px] sm:text-xs">
+              {isBgmMuted ? 'bgm off' : 'bgm on'}
+            </span>
+          </button>
+
           {/* Mini Sound Toggle Button */}
           <button
             onClick={handleToggleMute}
-            className={`px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)] ${
+            className={`px-2.5 py-1.5 rounded-lg bg-[var(--bg-card)] border transition-all flex items-center gap-1.5 shadow-sm text-[var(--text-typed)] cursor-pointer ${
               isMuted
                 ? 'border-[var(--error-color)] text-[var(--error-color)]'
                 : 'border-[var(--border-main)] hover:border-[var(--accent-main)]'
             }`}
-            title={isMuted ? (uiLanguage === 'id' ? 'Aktifkan Suara' : 'Unmute Sound') : (uiLanguage === 'id' ? 'Matikan Suara' : 'Mute Sound')}
+            title={isMuted ? (uiLanguage === 'id' ? 'Aktifkan Suara Effect' : 'Unmute Sound Effects') : (uiLanguage === 'id' ? 'Matikan Suara Effect' : 'Mute Sound Effects')}
           >
             {isMuted ? (
               <VolumeX className="w-4 h-4 text-[var(--error-color)]" />
@@ -339,7 +382,7 @@ export function App() {
               <Volume2 className="w-4 h-4 text-[var(--accent-main)]" />
             )}
             <span className="font-bold text-[11px] sm:text-xs">
-              {isMuted ? (uiLanguage === 'id' ? 'bisu' : 'muted') : (uiLanguage === 'id' ? 'suara' : 'sound')}
+              {isMuted ? (uiLanguage === 'id' ? 'bisu' : 'muted') : (uiLanguage === 'id' ? 'sfx' : 'sfx')}
             </span>
           </button>
         </div>
@@ -408,6 +451,23 @@ export function App() {
           />
         )}
       </main>
+
+      {/* Direct Room Link Onboarding Profile Modal */}
+      {pendingDirectRoomCode && (
+        <ProfileModal
+          roomCode={pendingDirectRoomCode}
+          onSave={(name, color) => {
+            setLocalPlayer(name, color);
+            const targetCode = pendingDirectRoomCode;
+            setPendingDirectRoomCode(null);
+            handleEnterRaceRoom(targetCode, false);
+          }}
+          onCancel={() => {
+            setPendingDirectRoomCode(null);
+            handleReturnToHome();
+          }}
+        />
+      )}
 
       {/* Footer */}
       <footer className="relative z-10 w-full px-4 sm:w-[90%] md:w-[85%] mx-auto py-4 sm:py-6 text-center text-xs text-[var(--text-muted)] flex items-center justify-between">

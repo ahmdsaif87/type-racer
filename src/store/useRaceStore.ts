@@ -28,6 +28,7 @@ interface RaceState {
   joinRoom: (roomId: string, player: Player) => void;
   updatePlayer: (playerId: string, updates: Partial<Player>) => void;
   removePlayer: (playerId: string) => void;
+  kickPlayer: (playerId: string) => void;
   setRoomStatus: (status: RoomStatus) => void;
   setRoomSettings: (lang: TextLanguage, length: TextLength, customTxt?: string) => void;
   setTargetText: (text: string) => void;
@@ -113,7 +114,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       name: localPlayerName,
       color: localPlayerColor,
       isHost: false,
-      isReady: true,
+      isReady: false,
       progress: 0,
       wpm: 0,
       accuracy: 100,
@@ -202,7 +203,33 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     const state = get();
     const nextPlayers = { ...state.players };
     delete nextPlayers[playerId];
-    set({ players: nextPlayers });
+
+    let nextHostId = state.hostId;
+
+    // If the leaving player was the host (or hostId is no longer in remaining players)
+    if (playerId === state.hostId || !nextPlayers[state.hostId]) {
+      const remainingList = Object.values(nextPlayers).sort(
+        (a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)
+      );
+
+      if (remainingList.length > 0) {
+        const newHost = remainingList[0];
+        nextHostId = newHost.id;
+        nextPlayers[newHost.id] = {
+          ...newHost,
+          isHost: true,
+          isReady: true
+        };
+      } else {
+        nextHostId = '';
+      }
+    }
+
+    set({ players: nextPlayers, hostId: nextHostId });
+  },
+
+  kickPlayer: (playerId: string) => {
+    get().removePlayer(playerId);
   },
 
   setRoomStatus: (status: RoomStatus) => {
@@ -212,6 +239,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       Object.keys(state.players).forEach(id => {
         resetPlayers[id] = {
           ...state.players[id],
+          isReady: status === 'LOBBY' ? (state.players[id].isHost ? true : false) : state.players[id].isReady,
           progress: 0,
           wpm: 0,
           accuracy: 100,
@@ -233,7 +261,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     if (lang === 'CUSTOM') {
       newText = customTxt || get().customText || 'Type your custom text passage here.';
     } else {
-      newText = getRandomText(lang, length);
+      newText = getRandomText(lang, length, get().targetText);
     }
 
     set({
@@ -259,6 +287,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     Object.keys(state.players).forEach(id => {
       resetPlayers[id] = {
         ...state.players[id],
+        isReady: state.players[id].isHost ? true : false,
         progress: 0,
         wpm: 0,
         accuracy: 100,
@@ -274,7 +303,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     if (state.textLanguage === 'CUSTOM') {
       nextText = state.customText || 'Type your custom text passage here.';
     } else {
-      nextText = getRandomText(state.textLanguage, state.textLength);
+      nextText = getRandomText(state.textLanguage, state.textLength, state.targetText);
     }
 
     set({

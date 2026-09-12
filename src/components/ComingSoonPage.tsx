@@ -15,6 +15,10 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
   const { uiLanguage } = useRaceStore();
   const isIndo = uiLanguage === 'id';
 
+  React.useEffect(() => {
+    soundEngine.playModalOpen();
+  }, []);
+
   const upcomingFeatures = [
     {
       icon: Swords,
@@ -36,13 +40,10 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
   return (
     <div className="w-full max-w-lg mx-auto py-10 px-4 font-mono select-none space-y-6">
       {/* Header Badge */}
-      <div className="text-center space-y-3">
-        <div className="w-16 h-16 mx-auto rounded-2xl bg-[var(--accent-main)]/10 border border-[var(--accent-main)]/30 flex items-center justify-center text-[var(--accent-main)] shadow-[0_0_20px_var(--accent-glow)] animate-pulse">
-          <Sparkles className="w-8 h-8" />
-        </div>
-
-        <h2 className="text-2xl font-bold tracking-tight text-[var(--accent-main)] drop-shadow-[0_0_10px_var(--accent-glow)]">
-          {featureName ? `${featureName}` : isIndo ? 'Fitur Dalam Pengembangan' : 'Feature Under Development'}
+      <div className="text-center space-y-2">
+        <h2 className="text-2xl font-bold tracking-tight text-[var(--accent-main)] drop-shadow-[0_0_10px_var(--accent-glow)] flex items-center justify-center gap-2">
+          <Sparkles className="w-5 h-5 text-[var(--accent-main)]" />
+          <span>{featureName ? `${featureName}` : isIndo ? 'Fitur Dalam Pengembangan' : 'Feature Under Development'}</span>
         </h2>
 
         <p className="text-xs text-[var(--text-muted)] max-w-sm mx-auto leading-relaxed">
@@ -54,8 +55,8 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
 
       {/* Feature Preview Cards */}
       <div className="space-y-3 pt-2">
-        <div className="text-[10px] uppercase tracking-wider text-[var(--accent-main)] font-bold text-center mb-1">
-          {isIndo ? '--- Fitur Mendatang ---' : '--- Upcoming Features ---'}
+        <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-bold text-center mb-1">
+          {isIndo ? 'Fitur Mendatang' : 'Upcoming Features'}
         </div>
 
         {upcomingFeatures.map((item, idx) => {
@@ -63,22 +64,20 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
           return (
             <div
               key={idx}
-              className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] flex items-start gap-3 shadow-md hover:border-[var(--accent-main)]/50 transition-all"
+              className="p-4 rounded-xl bg-[var(--bg-card)] border border-[var(--border-main)] space-y-1.5 shadow-md hover:border-[var(--accent-main)]/50 transition-all text-left"
             >
-              <div className="p-2 rounded-lg bg-[var(--bg-input)] text-[var(--accent-main)] border border-[var(--border-main)] shrink-0">
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="space-y-1 text-left">
-                <h3 className="text-xs font-bold text-[var(--text-typed)] flex items-center gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-bold text-[var(--text-typed)]">
+                  <Icon className="w-4 h-4 text-[var(--accent-main)]" />
                   <span>{item.title}</span>
-                  <span className="text-[9px] px-1.5 py-0.2 rounded bg-[var(--accent-main)]/20 text-[var(--accent-main)] border border-[var(--accent-main)]/30 uppercase font-semibold">
-                    {isIndo ? 'Segera' : 'Soon'}
-                  </span>
-                </h3>
-                <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                  {item.desc}
-                </p>
+                </div>
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--accent-main)]/20 text-[var(--accent-main)] font-semibold uppercase">
+                  {isIndo ? 'Segera' : 'Soon'}
+                </span>
               </div>
+              <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                {item.desc}
+              </p>
             </div>
           );
         })}
@@ -91,7 +90,7 @@ export const ComingSoonPage: React.FC<ComingSoonPageProps> = ({
             soundEngine.playKeyPress();
             onReturnHome();
           }}
-          className="w-full py-3.5 rounded-xl bg-[var(--accent-main)] hover:brightness-110 text-slate-950 font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+          className="w-full py-3.5 rounded-xl bg-[var(--accent-main)] hover:brightness-110 text-slate-950 font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>{isIndo ? 'Kembali ke Beranda' : 'Return to Home'}</span>

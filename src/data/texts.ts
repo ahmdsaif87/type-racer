@@ -126,15 +126,24 @@ export function autoGenerateText(lang: TextLanguage = 'ID', length: TextLength =
   return generated;
 }
 
-export function getRandomText(lang: TextLanguage = 'ID', length: TextLength = 25): string {
-  // 85% chance of auto generated fresh unique word sequence, 15% static preset
-  if (Math.random() < 0.85) {
-    return autoGenerateText(lang, length);
-  }
+export function getRandomText(lang: TextLanguage = 'ID', length: TextLength = 25, excludeText?: string): string {
+  let nextText = '';
+  let attempts = 0;
 
-  const filtered = TYPING_TEXTS.filter(t => t.lang === lang);
-  if (filtered.length > 0) {
-    return filtered[Math.floor(Math.random() * filtered.length)].text;
-  }
-  return autoGenerateText(lang, length);
+  do {
+    // 85% chance of auto generated fresh unique word sequence, 15% static preset
+    if (Math.random() < 0.85) {
+      nextText = autoGenerateText(lang, length);
+    } else {
+      const filtered = TYPING_TEXTS.filter(t => t.lang === lang && t.text !== excludeText);
+      if (filtered.length > 0) {
+        nextText = filtered[Math.floor(Math.random() * filtered.length)].text;
+      } else {
+        nextText = autoGenerateText(lang, length);
+      }
+    }
+    attempts++;
+  } while (nextText === excludeText && attempts < 10);
+
+  return nextText;
 }

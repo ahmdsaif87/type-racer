@@ -6,6 +6,8 @@ import type { Player, RoomStatus, TextLanguage, TextLength } from '../types/game
 type RealtimeMessage =
   | { event: 'join_room'; payload: { roomId: string; player: Player; roomState?: { targetText: string; status: RoomStatus; textLanguage: TextLanguage; textLength: TextLength; hostId: string } } }
   | { event: 'player_progress'; payload: { roomId: string; playerId: string; progress: number; wpm: number; accuracy: number; isFinished: boolean; finishTime?: number } }
+  | { event: 'player_ready'; payload: { roomId: string; playerId: string; isReady: boolean } }
+  | { event: 'kick_player'; payload: { roomId: string; playerId: string } }
   | { event: 'room_state_change'; payload: { roomId: string; status: RoomStatus; targetText: string; countdownSec?: number } }
   | { event: 'host_settings_change'; payload: { roomId: string; textLanguage: TextLanguage; textLength: TextLength; targetText: string } }
   | { event: 'sync_state'; payload: { roomId: string; players: Record<string, Player>; targetText: string; status: RoomStatus; hostId: string } }
@@ -39,9 +41,14 @@ class RealtimeService {
   private isConnectingHost: boolean = false;
   private joinAttemptStartTime: number = 0;
   private onRoomNotFoundListener: ((roomId: string) => void) | null = null;
+  private onKickedListener: (() => void) | null = null;
 
   public setOnRoomNotFound(cb: (roomId: string) => void) {
     this.onRoomNotFoundListener = cb;
+  }
+
+  public setOnKicked(cb: () => void) {
+    this.onKickedListener = cb;
   }
 
   public connectRoom(roomId: string) {
@@ -431,6 +438,33 @@ class RealtimeService {
     });
   }
 
+  public broadcastPlayerReady(isReady: boolean) {
+    const state = useRaceStore.getState();
+    state.updatePlayer(state.localPlayerId, { isReady });
+
+    this.broadcast({
+      event: 'player_ready',
+      payload: {
+        roomId: this.currentRoomId,
+        playerId: state.localPlayerId,
+        isReady
+      }
+    });
+  }
+
+  public broadcastKickPlayer(playerId: string) {
+    const state = useRaceStore.getState();
+    state.removePlayer(playerId);
+
+    this.broadcast({
+      event: 'kick_player',
+      payload: {
+        roomId: this.currentRoomId,
+        playerId
+      }
+    });
+  }
+
   public broadcastHostSettings(textLanguage: TextLanguage, textLength: TextLength, targetText: string) {
     const state = useRaceStore.getState();
     state.setRoomSettings(textLanguage, textLength);
@@ -551,6 +585,28 @@ class RealtimeService {
         break;
       }
 
+      case 'player_ready': {
+        const { playerId, isReady } = msg.payload;
+        state.updatePlayer(playerId, { isReady });
+        break;
+      }
+
+      case 'kick_player': {
+        const { playerId } = msg.payload;
+        if (playerId === state.localPlayerId) {
+          this.disconnect();
+          state.resetRaceRoom();
+          useTypingStore.getState().resetTyping();
+          if (this.onKickedListener) {
+            this.onKickedListener();
+          }
+        } else {
+          state.removePlayer(playerId);
+          this.checkAllFinished();
+        }
+        break;
+      }
+
       case 'room_state_change': {
         const { status, targetText, countdownSec } = msg.payload;
         state.setRoomStatus(status);
@@ -575,6 +631,11 @@ class RealtimeService {
 
       case 'player_leave': {
         state.removePlayer(msg.payload.playerId);
+        const newState = useRaceStore.getState();
+        if (newState.hostId === state.localPlayerId && (!this.peer || this.peer.destroyed)) {
+          const cleanRoomId = this.currentRoomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+          this.initHostPeer(`tr-host-${cleanRoomId}`);
+        }
         this.checkAllFinished();
         break;
       }
