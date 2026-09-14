@@ -1,4 +1,4 @@
-import type { TextPreset, CarColor, TextLanguage, TextLength } from '../types/game';
+import type { CarColor, TextLanguage, TextMode, TextLength } from '../types/game';
 
 export const CAR_COLORS: CarColor[] = [
   {
@@ -45,105 +45,323 @@ export const CAR_COLORS: CarColor[] = [
   }
 ];
 
-// Rich Word Bank for Auto Generating Typing Passages
-const WORD_BANK_ID = [
-  'balap', 'cepat', 'mengetik', 'mobil', 'sirkuit', 'lintasan', 'fokus', 'juara',
-  'akurasi', 'waktu', 'detik', 'mesin', 'kecepatan', 'jari', 'papan', 'ketik',
-  'konsentrasi', 'pacu', 'garis', 'finis', 'nitro', 'teknologi', 'roda', 'jalan',
-  'digital', 'ritme', 'gaya', 'daya', 'arena', 'piala', 'podium', 'laga',
-  'aksi', 'hebat', 'bisa', 'kita', 'saya', 'kamu', 'dengan', 'untuk', 'pada',
-  'yang', 'dari', 'oleh', 'akan', 'telah', 'harus', 'dapat', 'lebih', 'tinggi',
-  'jauh', 'luas', 'terang', 'maju', 'lari', 'tenang', 'mantap', 'tangguh', 'kencang',
-  'puncak', 'sorot', 'seru', 'tanding', 'lawan', 'ruang', 'gabung', 'main',
-  'rekor', 'posisi', 'kejar', 'susul', 'tikungan', 'lurus', 'laju', 'tancap',
-  'gas', 'derap', 'tombol', 'performa', 'unggul', 'prestasi', 'semangat', 'tuntas',
-  'uji', 'kemampuan', 'latih', 'refleks', 'otot', 'memori', 'harmoni', 'suara'
-];
-
-const WORD_BANK_EN = [
-  'speed', 'racer', 'typing', 'fast', 'track', 'focus', 'finish', 'win',
-  'turbo', 'nitro', 'engine', 'drive', 'drift', 'champion', 'accuracy', 'rhythm',
-  'power', 'rapid', 'shift', 'gear', 'asphalt', 'victory', 'street', 'dynamic',
-  'apex', 'fuel', 'boost', 'flash', 'circuit', 'glory', 'pulse', 'score',
-  'time', 'quick', 'jump', 'over', 'press', 'key', 'board', 'light',
-  'bold', 'smooth', 'sharp', 'flow', 'race', 'lane', 'lap', 'rival',
-  'crown', 'hyper', 'sonic', 'dash', 'blade', 'storm', 'surge', 'rush',
-  'spark', 'blaze', 'steer', 'wheel', 'strike', 'force', 'pace', 'lead',
-  'zone', 'rally', 'line', 'mode', 'grid', 'rank', 'match', 'clash'
-];
-
-export const TYPING_TEXTS: TextPreset[] = [
-  {
-    id: 'id-preset-1',
-    lang: 'ID',
-    length: 25,
-    title: 'Sirkuit Kecepatan',
-    text: 'Mengetik cepat membutuhkan fokus penuh dan akurasi tinggi di atas papan ketik balap digital.'
-  },
-  {
-    id: 'en-preset-1',
-    lang: 'EN',
-    length: 25,
-    title: 'Speed Circuit',
-    text: 'Precision beats speed when racing on the digital track towards ultimate victory and glory.'
-  }
-];
-
-export function autoGenerateText(lang: TextLanguage = 'ID', length: TextLength = 25): string {
-  const wordCount = length || 25;
-  const wordBank = lang === 'ID' ? WORD_BANK_ID : WORD_BANK_EN;
-
-  const selectedWords: string[] = [];
-  let previousWord = '';
-
-  for (let i = 0; i < wordCount; i++) {
-    let randomWord = wordBank[Math.floor(Math.random() * wordBank.length)];
-    // Avoid immediate duplicate word
-    while (randomWord === previousWord) {
-      randomWord = wordBank[Math.floor(Math.random() * wordBank.length)];
-    }
-    previousWord = randomWord;
-
-    // Capitalize first word of sentence
-    if (i === 0 || i % 10 === 0) {
-      randomWord = randomWord.charAt(0).toUpperCase() + randomWord.slice(1);
-    }
-
-    // Add punctuation occasionally
-    if ((i + 1) % 10 === 0 && i !== wordCount - 1) {
-      randomWord += '.';
-    }
-
-    selectedWords.push(randomWord);
-  }
-
-  // Join words with single space
-  let generated = selectedWords.join(' ');
-  if (!generated.endsWith('.')) {
-    generated += '.';
-  }
-
-  return generated;
+export interface MonkeyQuote {
+  id?: number;
+  text: string;
+  source?: string;
+  length?: number;
 }
 
-export function getRandomText(lang: TextLanguage = 'ID', length: TextLength = 25, excludeText?: string): string {
-  let nextText = '';
-  let attempts = 0;
+// In-memory cache for API fetched datasets
+let monkeytypeIdQuotesCache: string[] | null = null;
+let monkeytypeEnQuotesCache: string[] | null = null;
+let monkeytypeIdWordsCache: string[] | null = null;
+let monkeytypeEnWordsCache: string[] | null = null;
 
-  do {
-    // 85% chance of auto generated fresh unique word sequence, 15% static preset
-    if (Math.random() < 0.85) {
-      nextText = autoGenerateText(lang, length);
+// Categorized Word Buckets for Indonesian Natural Grammar Construction
+const ID_NOUNS = ['kita', 'saya', 'pemain', 'waktu', 'fokus', 'akurasi', 'kecepatan', 'ritme', 'papan', 'sirkuit', 'performa', 'hasil', 'usaha', 'langkah', 'tujuan', 'proses', 'peluang', 'pikiran', 'rekam', 'suara'];
+const ID_VERBS = ['harus', 'dapat', 'bisa', 'menjadi', 'mencapai', 'meningkatkan', 'membawa', 'membuat', 'menjaga', 'melakukan', 'memiliki', 'bergerak', 'mengatur', 'melatih', 'mempertahankan'];
+const ID_ADJECTIVES = ['cepat', 'baik', 'jelas', 'tinggi', 'kuat', 'konsisten', 'sempurna', 'tepat', 'mudah', 'luas', 'mantap', 'nyata', 'hebat', 'stabil', 'maksimal'];
+const ID_CONNECTORS = ['dengan', 'untuk', 'pada', 'yang', 'dalam', 'secara', 'sehingga', 'serta', 'agar', 'sambil', 'karena', 'tanpa'];
+
+// Categorized Word Buckets for English Natural Grammar Construction
+const EN_NOUNS = ['racer', 'player', 'speed', 'focus', 'accuracy', 'time', 'rhythm', 'track', 'performance', 'victory', 'result', 'effort', 'mind', 'power', 'goal', 'score'];
+const EN_VERBS = ['must', 'can', 'should', 'keep', 'reach', 'build', 'improve', 'create', 'maintain', 'drive', 'shift', 'boost', 'lead', 'gain'];
+const EN_ADJECTIVES = ['fast', 'quick', 'clear', 'strong', 'smooth', 'perfect', 'steady', 'sharp', 'high', 'great', 'stable', 'bold'];
+const EN_CONNECTORS = ['with', 'for', 'and', 'that', 'into', 'while', 'under', 'through', 'every', 'about'];
+
+// Helper with timeout for API requests
+async function fetchWithTimeout(resource: string, options: RequestInit = {}, timeoutMs = 3000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(resource, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(id);
+    return response;
+  } catch (err) {
+    clearTimeout(id);
+    throw err;
+  }
+}
+
+// Fetch Quotes from Monkeytype JSON API CDN
+async function fetchMonkeytypeQuotesList(lang: 'ID' | 'EN'): Promise<string[]> {
+  try {
+    if (lang === 'ID') {
+      if (monkeytypeIdQuotesCache && monkeytypeIdQuotesCache.length > 0) return monkeytypeIdQuotesCache;
+      const res = await fetchWithTimeout('https://raw.githubusercontent.com/monkeytypegame/monkeytype/master/frontend/static/quotes/indonesian.json');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.quotes)) {
+          const parsed = json.quotes.map((q: MonkeyQuote) => {
+            return q.source ? `${q.text} — ${q.source}` : q.text;
+          }).filter(Boolean);
+          if (parsed.length > 0) {
+            monkeytypeIdQuotesCache = parsed;
+            return parsed;
+          }
+        }
+      }
     } else {
-      const filtered = TYPING_TEXTS.filter(t => t.lang === lang && t.text !== excludeText);
-      if (filtered.length > 0) {
-        nextText = filtered[Math.floor(Math.random() * filtered.length)].text;
-      } else {
-        nextText = autoGenerateText(lang, length);
+      if (monkeytypeEnQuotesCache && monkeytypeEnQuotesCache.length > 0) return monkeytypeEnQuotesCache;
+      const res = await fetchWithTimeout('https://raw.githubusercontent.com/monkeytypegame/monkeytype/master/frontend/static/quotes/english.json');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.quotes)) {
+          const parsed = json.quotes.map((q: MonkeyQuote) => {
+            return q.source ? `${q.text} — ${q.source}` : q.text;
+          }).filter(Boolean);
+          if (parsed.length > 0) {
+            monkeytypeEnQuotesCache = parsed;
+            return parsed;
+          }
+        }
       }
     }
-    attempts++;
-  } while (nextText === excludeText && attempts < 10);
+  } catch (e) {
+    // API Fetch Failed
+  }
 
-  return nextText;
+  return [];
+}
+
+// Fetch Wordlist from Monkeytype CDN
+async function fetchMonkeytypeWordsList(lang: 'ID' | 'EN'): Promise<string[]> {
+  try {
+    if (lang === 'ID') {
+      if (monkeytypeIdWordsCache && monkeytypeIdWordsCache.length > 0) return monkeytypeIdWordsCache;
+      const res = await fetchWithTimeout('https://raw.githubusercontent.com/monkeytypegame/monkeytype/master/frontend/static/languages/indonesian_1k.json');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.words)) {
+          monkeytypeIdWordsCache = json.words;
+          return json.words;
+        }
+      }
+    } else {
+      if (monkeytypeEnWordsCache && monkeytypeEnWordsCache.length > 0) return monkeytypeEnWordsCache;
+      const res = await fetchWithTimeout('https://raw.githubusercontent.com/monkeytypegame/monkeytype/master/frontend/static/languages/english.json');
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.words)) {
+          monkeytypeEnWordsCache = json.words;
+          return json.words;
+        }
+      }
+    }
+  } catch (e) {
+    // API Fetch Failed
+  }
+
+  return [];
+}
+
+// Helper to pick random item from array
+function pickRandom<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// Generate Coherent Structured Sentence Flow (Grammar Chaining)
+export function generateStructuredText(lang: 'ID' | 'EN', rawWords: string[], targetLength: TextLength): string {
+  const nouns = lang === 'ID' ? ID_NOUNS : EN_NOUNS;
+  const verbs = lang === 'ID' ? ID_VERBS : EN_VERBS;
+  const adjectives = lang === 'ID' ? ID_ADJECTIVES : EN_ADJECTIVES;
+  const connectors = lang === 'ID' ? ID_CONNECTORS : EN_CONNECTORS;
+
+  const combinedNouns = rawWords.length > 20 ? [...nouns, ...rawWords.slice(0, 100)] : nouns;
+  const selected: string[] = [];
+
+  const patternCycle = ['NOUN', 'VERB', 'ADJ', 'CONNECTOR'];
+  let prevWord = '';
+
+  for (let i = 0; i < targetLength; i++) {
+    const role = patternCycle[i % patternCycle.length];
+    let candidate = '';
+
+    if (role === 'NOUN') {
+      candidate = pickRandom(combinedNouns);
+    } else if (role === 'VERB') {
+      candidate = pickRandom(verbs);
+    } else if (role === 'ADJ') {
+      candidate = pickRandom(adjectives);
+    } else {
+      candidate = pickRandom(connectors);
+    }
+
+    while (candidate === prevWord) {
+      candidate = pickRandom(combinedNouns);
+    }
+    prevWord = candidate;
+
+    if (i === 0 || (i % 8 === 0 && i < targetLength - 1)) {
+      candidate = candidate.charAt(0).toUpperCase() + candidate.slice(1);
+    }
+
+    selected.push(candidate);
+  }
+
+  let result = selected.join(' ');
+  if (!/[.!?]$/.test(result)) {
+    result += '.';
+  }
+  return result;
+}
+
+// Generate Balanced Keyboard Punctuation Text (Natural 1 symbol per 4-6 words)
+export function generateStructuredPunctuation(lang: 'ID' | 'EN', rawWords: string[], targetLength: TextLength): string {
+  const nouns = lang === 'ID' ? ID_NOUNS : EN_NOUNS;
+  const verbs = lang === 'ID' ? ID_VERBS : EN_VERBS;
+  const adjectives = lang === 'ID' ? ID_ADJECTIVES : EN_ADJECTIVES;
+  const connectors = lang === 'ID' ? ID_CONNECTORS : EN_CONNECTORS;
+
+  const combinedNouns = rawWords.length > 20 ? [...nouns, ...rawWords.slice(0, 100)] : nouns;
+  const patternCycle = ['NOUN', 'VERB', 'ADJ', 'CONNECTOR'];
+
+  const selected: string[] = [];
+  let prevWord = '';
+  let capitalizeNext = true;
+  let wordsSinceSymbol = 0;
+  let wordsSinceSentenceEnd = 0;
+
+  for (let i = 0; i < targetLength; i++) {
+    const role = patternCycle[i % patternCycle.length];
+    let word = '';
+
+    if (role === 'NOUN') word = pickRandom(combinedNouns);
+    else if (role === 'VERB') word = pickRandom(verbs);
+    else if (role === 'ADJ') word = pickRandom(adjectives);
+    else word = pickRandom(connectors);
+
+    while (word === prevWord) {
+      word = pickRandom(combinedNouns);
+    }
+    prevWord = word;
+    wordsSinceSymbol++;
+    wordsSinceSentenceEnd++;
+
+    if (capitalizeNext) {
+      word = word.charAt(0).toUpperCase() + word.slice(1);
+      capitalizeNext = false;
+    }
+
+    // Occasional English Contractions (e.g. don't, it's, we're)
+    if (lang === 'EN' && Math.random() < 0.08) {
+      const contractions = ["don't", "it's", "can't", "they're", "we'll", "you're"];
+      word = pickRandom(contractions);
+    }
+
+    // Occasional Word Wrappers (Quotes, Parentheses, Brackets) ~3% chance
+    if (wordsSinceSymbol >= 4 && Math.random() < 0.04 && i > 0 && i < targetLength - 1) {
+      const wrapRand = Math.random();
+      if (wrapRand < 0.35) word = `"${word}"`;
+      else if (wrapRand < 0.60) word = `'${word}'`;
+      else if (wrapRand < 0.85) word = `(${word})`;
+      else word = `[${word}]`;
+      wordsSinceSymbol = 0;
+    }
+
+    let pSymbol = '';
+    if (i === targetLength - 1) {
+      pSymbol = '.';
+    } else if (wordsSinceSentenceEnd >= 7 && Math.random() < 0.40) {
+      // End sentence every ~7-10 words
+      pSymbol = Math.random() < 0.80 ? '.' : Math.random() < 0.5 ? '!' : '?';
+      capitalizeNext = true;
+      wordsSinceSentenceEnd = 0;
+      wordsSinceSymbol = 0;
+    } else if (wordsSinceSymbol >= 4 && Math.random() < 0.25) {
+      // Sparsely add 1 intermediate punctuation symbol every 4-6 words
+      const pRand = Math.random();
+      if (pRand < 0.45) pSymbol = ',';
+      else if (pRand < 0.65) pSymbol = ':';
+      else if (pRand < 0.80) pSymbol = ' -';
+      else if (pRand < 0.90) pSymbol = ';';
+      else pSymbol = '/';
+
+      wordsSinceSymbol = 0;
+    }
+
+    word += pSymbol;
+    selected.push(word);
+  }
+
+  let result = selected.join(' ');
+  result = result.replace(/\s+-\s+/g, ' - ').replace(/\s+/g, ' ').trim();
+  if (!/[.!?"]$/.test(result)) {
+    result += '.';
+  }
+  return result;
+}
+
+// Select quote by character length
+function selectQuoteByLength(quotes: string[], targetLength: TextLength, excludeText?: string): string {
+  if (!quotes || quotes.length === 0) return 'Loading quote passage...';
+
+  const filtered = quotes.filter(q => q !== excludeText);
+  if (filtered.length === 0) return quotes[0];
+
+  let targetQuotes = filtered;
+  if (targetLength <= 15) {
+    targetQuotes = filtered.filter(q => q.length <= 150);
+  } else if (targetLength <= 30) {
+    targetQuotes = filtered.filter(q => q.length > 80 && q.length <= 350);
+  } else {
+    targetQuotes = filtered.filter(q => q.length > 200);
+  }
+
+  if (targetQuotes.length === 0) targetQuotes = filtered;
+  return targetQuotes[Math.floor(Math.random() * targetQuotes.length)];
+}
+
+// Synchronous instant generator
+export function getRandomText(
+  lang: TextLanguage = 'ID',
+  mode: TextMode = 'WORDS',
+  length: TextLength = 25,
+  excludeText?: string
+): string {
+  if (mode === 'CUSTOM') return excludeText || 'Type custom text passage here.';
+
+  if (mode === 'PUNCTUATION') {
+    const nouns = lang === 'ID' ? ID_NOUNS : EN_NOUNS;
+    return generateStructuredPunctuation(lang, nouns, length);
+  } else if (mode === 'QUOTE') {
+    const defaultQuotes = lang === 'ID'
+      ? ["Keberhasilan adalah kepunyaan mereka yang senantiasa berusaha. — B.J. Habibie"]
+      : ["Success is not final, failure is not fatal: it is the courage to continue that counts. — Winston Churchill"];
+    return selectQuoteByLength(defaultQuotes, length, excludeText);
+  }
+
+  const nouns = lang === 'ID' ? ID_NOUNS : EN_NOUNS;
+  return generateStructuredText(lang, nouns, length);
+}
+
+// 100% Asynchronous API text generator driven by Language, Mode, and Length
+export async function getRandomTextAsync(
+  lang: TextLanguage = 'ID',
+  mode: TextMode = 'WORDS',
+  length: TextLength = 25,
+  excludeText?: string
+): Promise<string> {
+  if (mode === 'CUSTOM') return excludeText || 'Type custom text passage here.';
+
+  try {
+    if (mode === 'PUNCTUATION') {
+      const words = await fetchMonkeytypeWordsList(lang);
+      return generateStructuredPunctuation(lang, words, length);
+    } else if (mode === 'QUOTE') {
+      const quotes = await fetchMonkeytypeQuotesList(lang);
+      return selectQuoteByLength(quotes, length, excludeText);
+    } else {
+      const words = await fetchMonkeytypeWordsList(lang);
+      return generateStructuredText(lang, words, length);
+    }
+  } catch (e) {
+    // API Fallback
+  }
+
+  return getRandomText(lang, mode, length, excludeText);
 }

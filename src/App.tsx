@@ -290,11 +290,11 @@ export function App() {
     setUiLanguage(nextLang);
 
     const state = useRaceStore.getState();
-    if (state.status === 'LOBBY' && state.hostId === state.localPlayerId && state.textLanguage !== 'CUSTOM') {
+    if (state.status === 'LOBBY' && state.hostId === state.localPlayerId && state.textMode !== 'CUSTOM') {
       const passageLang = nextLang === 'id' ? 'ID' : 'EN';
-      const newText = getRandomText(passageLang, state.textLength);
-      state.setRoomSettings(passageLang, state.textLength, newText);
-      realtimeService.broadcastHostSettings(passageLang, state.textLength, newText);
+      const newText = getRandomText(passageLang, state.textMode, state.textLength);
+      state.setRoomSettings(passageLang, state.textMode, state.textLength, newText);
+      realtimeService.broadcastHostSettings(passageLang, state.textMode, state.textLength, newText);
     }
   };
 

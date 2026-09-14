@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import type { Player, RoomStatus, TextLanguage, TextLength, CarColorId } from '../types/game';
+import type { Player, RoomStatus, TextLanguage, TextMode, TextLength, CarColorId } from '../types/game';
 import type { UiLanguage } from '../data/i18n';
-import { getRandomText } from '../data/texts';
+import { getRandomText, getRandomTextAsync } from '../data/texts';
 
 interface RaceState {
   roomId: string;
@@ -9,6 +9,7 @@ interface RaceState {
   hostId: string;
   targetText: string;
   textLanguage: TextLanguage;
+  textMode: TextMode;
   textLength: TextLength;
   uiLanguage: UiLanguage;
   players: Record<string, Player>;
@@ -30,7 +31,7 @@ interface RaceState {
   removePlayer: (playerId: string) => void;
   kickPlayer: (playerId: string) => void;
   setRoomStatus: (status: RoomStatus) => void;
-  setRoomSettings: (lang: TextLanguage, length: TextLength, customTxt?: string) => void;
+  setRoomSettings: (lang: TextLanguage, mode: TextMode, length: TextLength, customTxt?: string) => void;
   setTargetText: (text: string) => void;
   setCountdownSec: (sec: number) => void;
   resetRaceRoom: () => void;
@@ -55,6 +56,7 @@ export const useRaceStore = create<RaceState>((set, get) => ({
   hostId: '',
   targetText: '',
   textLanguage: 'ID',
+  textMode: 'WORDS',
   textLength: 25,
   uiLanguage: (localStorage.getItem('typeracer_lang') as UiLanguage) || 'id',
   players: {},
@@ -73,13 +75,12 @@ export const useRaceStore = create<RaceState>((set, get) => ({
 
   setUiLanguage: (lang: UiLanguage) => {
     localStorage.setItem('typeracer_lang', lang);
-    document.documentElement.lang = lang;
     set({ uiLanguage: lang });
   },
 
   createRoom: (roomId: string) => {
-    const { localPlayerId, localPlayerName, localPlayerColor, textLanguage, textLength } = get();
-    const initialText = getRandomText(textLanguage, textLength);
+    const { localPlayerId, localPlayerName, localPlayerColor, textLanguage, textMode, textLength } = get();
+    const initialText = getRandomText(textLanguage, textMode, textLength);
 
     const hostPlayer: Player = {
       id: localPlayerId,
@@ -105,6 +106,14 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       players: { [localPlayerId]: hostPlayer },
       isSinglePlayer: false
     });
+
+    if (textMode !== 'CUSTOM') {
+      getRandomTextAsync(textLanguage, textMode, textLength).then((fetched) => {
+        if (fetched && get().roomId === roomId && get().textLanguage === textLanguage && get().textMode === textMode) {
+          set({ targetText: fetched });
+        }
+      });
+    }
   },
 
   joinExistingRoom: (roomId: string) => {
@@ -135,8 +144,9 @@ export const useRaceStore = create<RaceState>((set, get) => ({
   },
 
   startSinglePlayer: (customTxt?: string) => {
-    const { localPlayerId, localPlayerName, localPlayerColor, textLanguage, textLength } = get();
-    const activeText = customTxt?.trim() || getRandomText(textLanguage, textLength);
+    const { localPlayerId, localPlayerName, localPlayerColor, textLanguage, textMode, textLength } = get();
+    const activeMode: TextMode = customTxt ? 'CUSTOM' : textMode;
+    const activeText = customTxt?.trim() || getRandomText(textLanguage, activeMode, textLength);
     const soloRoomId = 'SOLO-' + Math.floor(1000 + Math.random() * 9000);
 
     const soloPlayer: Player = {
@@ -160,25 +170,25 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       status: 'LOBBY',
       hostId: localPlayerId,
       targetText: activeText,
+      textMode: activeMode,
+      customText: customTxt ? customTxt : get().customText,
       players: { [localPlayerId]: soloPlayer },
-      isSinglePlayer: true,
-      customText: customTxt || ''
+      isSinglePlayer: true
     });
+
+    if (!customTxt && activeMode !== 'CUSTOM') {
+      getRandomTextAsync(textLanguage, activeMode, textLength).then((fetched) => {
+        if (fetched && get().roomId === soloRoomId) {
+          set({ targetText: fetched });
+        }
+      });
+    }
   },
 
-  joinRoom: (roomId: string, player: Player) => {
+  joinRoom: (_roomId: string, player: Player) => {
     const state = get();
-    const existingPlayer = state.players[player.id];
-    const playerIds = Object.keys(state.players);
-
-    if (playerIds.length >= MAX_PLAYERS_PER_ROOM && !existingPlayer) {
-      return;
-    }
-
-    const joinedAt = player.joinedAt || existingPlayer?.joinedAt || (player.isHost ? 1 : Date.now());
-
+    const joinedAt = player.joinedAt || Date.now();
     set({
-      roomId,
       players: {
         ...state.players,
         [player.id]: { ...player, joinedAt }
@@ -206,7 +216,6 @@ export const useRaceStore = create<RaceState>((set, get) => ({
 
     let nextHostId = state.hostId;
 
-    // If the leaving player was the host (or hostId is no longer in remaining players)
     if (playerId === state.hostId || !nextPlayers[state.hostId]) {
       const remainingList = Object.values(nextPlayers).sort(
         (a, b) => (a.joinedAt || 0) - (b.joinedAt || 0)
@@ -256,20 +265,31 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     }
   },
 
-  setRoomSettings: (lang: TextLanguage, length: TextLength, customTxt?: string) => {
+  setRoomSettings: (lang: TextLanguage, mode: TextMode, length: TextLength, customTxt?: string) => {
     let newText = '';
-    if (lang === 'CUSTOM') {
+    if (mode === 'CUSTOM') {
       newText = customTxt || get().customText || 'Type your custom text passage here.';
+    } else if (customTxt) {
+      newText = customTxt;
     } else {
-      newText = getRandomText(lang, length, get().targetText);
+      newText = getRandomText(lang, mode, length, get().targetText);
     }
 
     set({
       textLanguage: lang,
+      textMode: mode,
       textLength: length,
       targetText: newText,
       customText: customTxt !== undefined ? customTxt : get().customText
     });
+
+    if (mode !== 'CUSTOM' && !customTxt) {
+      getRandomTextAsync(lang, mode, length, get().targetText).then((fetchedText) => {
+        if (fetchedText && get().textLanguage === lang && get().textMode === mode && get().textLength === length) {
+          set({ targetText: fetchedText });
+        }
+      });
+    }
   },
 
   setTargetText: (text: string) => {
@@ -300,10 +320,10 @@ export const useRaceStore = create<RaceState>((set, get) => ({
     });
 
     let nextText = '';
-    if (state.textLanguage === 'CUSTOM') {
+    if (state.textMode === 'CUSTOM') {
       nextText = state.customText || 'Type your custom text passage here.';
     } else {
-      nextText = getRandomText(state.textLanguage, state.textLength, state.targetText);
+      nextText = getRandomText(state.textLanguage, state.textMode, state.textLength, state.targetText);
     }
 
     set({
@@ -312,5 +332,13 @@ export const useRaceStore = create<RaceState>((set, get) => ({
       players: resetPlayers,
       countdownSec: 3
     });
+
+    if (state.textMode !== 'CUSTOM') {
+      getRandomTextAsync(state.textLanguage, state.textMode, state.textLength, nextText).then((fetched) => {
+        if (fetched && get().status === 'LOBBY') {
+          set({ targetText: fetched });
+        }
+      });
+    }
   }
 }));

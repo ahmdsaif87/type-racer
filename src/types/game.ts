@@ -9,8 +9,9 @@ export interface CarColor {
 }
 
 export type RoomStatus = 'LOBBY' | 'COUNTDOWN' | 'IN_RACE' | 'FINISHED';
-export type TextLanguage = 'ID' | 'EN' | 'CUSTOM';
-export type TextLength = 15 | 25 | 50;
+export type TextLanguage = 'ID' | 'EN';
+export type TextMode = 'WORDS' | 'PUNCTUATION' | 'QUOTE' | 'CUSTOM';
+export type TextLength = 15 | 25 | 30 | 50;
 
 export interface Player {
   id: string;
@@ -53,6 +54,7 @@ export interface RoomState {
   status: RoomStatus;
   targetText: string;
   textLanguage: TextLanguage;
+  textMode: TextMode;
   textLength: TextLength;
   hostId: string;
   players: Record<string, Player>;

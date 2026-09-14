@@ -3,10 +3,10 @@ import { useRaceStore, MAX_PLAYERS_PER_ROOM } from '../store/useRaceStore';
 import { useTypingStore } from '../store/useTypingStore';
 import { realtimeService } from '../services/realtime';
 import { RaceTrack } from './RaceTrack';
-import type { TextLanguage, TextLength } from '../types/game';
+import type { TextLanguage, TextMode, TextLength } from '../types/game';
 import { soundEngine } from '../services/audio';
 import { UI_STRINGS } from '../data/i18n';
-import { getRandomText } from '../data/texts';
+import { getRandomText, getRandomTextAsync } from '../data/texts';
 import { Copy, Check, Info } from 'lucide-react';
 
 interface LobbyViewProps {
@@ -20,6 +20,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
     localPlayerId,
     players,
     textLanguage,
+    textMode,
     textLength,
     uiLanguage,
     targetText,
@@ -65,15 +66,43 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
     if (!isHost) return;
     soundEngine.playKeyPress();
 
-    if (lang === 'CUSTOM') {
+    const state = useRaceStore.getState();
+    const newText = getRandomText(lang, state.textMode, state.textLength);
+    state.setRoomSettings(lang, state.textMode, state.textLength, newText);
+    realtimeService.broadcastHostSettings(lang, state.textMode, state.textLength, newText);
+
+    if (state.textMode !== 'CUSTOM') {
+      getRandomTextAsync(lang, state.textMode, state.textLength).then((fetchedText) => {
+        const currentState = useRaceStore.getState();
+        if (fetchedText && currentState.textLanguage === lang) {
+          currentState.setTargetText(fetchedText);
+          realtimeService.broadcastHostSettings(lang, state.textMode, currentState.textLength, fetchedText);
+        }
+      });
+    }
+  };
+
+  const handleModeChange = (mode: TextMode) => {
+    if (!isHost) return;
+    soundEngine.playKeyPress();
+
+    if (mode === 'CUSTOM') {
       setShowCustomModal(true);
       return;
     }
 
     const state = useRaceStore.getState();
-    const newText = getRandomText(lang, state.textLength);
-    state.setRoomSettings(lang, state.textLength, newText);
-    realtimeService.broadcastHostSettings(lang, state.textLength, newText);
+    const newText = getRandomText(state.textLanguage, mode, state.textLength);
+    state.setRoomSettings(state.textLanguage, mode, state.textLength, newText);
+    realtimeService.broadcastHostSettings(state.textLanguage, mode, state.textLength, newText);
+
+    getRandomTextAsync(state.textLanguage, mode, state.textLength).then((fetchedText) => {
+      const currentState = useRaceStore.getState();
+      if (fetchedText && currentState.textMode === mode) {
+        currentState.setTargetText(fetchedText);
+        realtimeService.broadcastHostSettings(currentState.textLanguage, mode, currentState.textLength, fetchedText);
+      }
+    });
   };
 
   const handleCustomTextSubmit = (e: React.FormEvent) => {
@@ -83,17 +112,27 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
     soundEngine.playKeyPress();
     setShowCustomModal(false);
     const state = useRaceStore.getState();
-    state.setRoomSettings('CUSTOM', state.textLength, customTextInput.trim());
-    realtimeService.broadcastHostSettings('CUSTOM', state.textLength, customTextInput.trim());
+    state.setRoomSettings(state.textLanguage, 'CUSTOM', state.textLength, customTextInput.trim());
+    realtimeService.broadcastHostSettings(state.textLanguage, 'CUSTOM', state.textLength, customTextInput.trim());
   };
 
   const handleLengthChange = (length: TextLength) => {
     if (!isHost) return;
     soundEngine.playKeyPress();
     const state = useRaceStore.getState();
-    const newText = getRandomText(state.textLanguage, length);
-    state.setRoomSettings(state.textLanguage, length, newText);
-    realtimeService.broadcastHostSettings(state.textLanguage, length, newText);
+    const newText = getRandomText(state.textLanguage, state.textMode, length);
+    state.setRoomSettings(state.textLanguage, state.textMode, length, newText);
+    realtimeService.broadcastHostSettings(state.textLanguage, state.textMode, length, newText);
+
+    if (state.textMode !== 'CUSTOM') {
+      getRandomTextAsync(state.textLanguage, state.textMode, length).then((fetchedText) => {
+        const currentState = useRaceStore.getState();
+        if (fetchedText && currentState.textLength === length) {
+          currentState.setTargetText(fetchedText);
+          realtimeService.broadcastHostSettings(currentState.textLanguage, currentState.textMode, length, fetchedText);
+        }
+      });
+    }
   };
 
   const me = players[localPlayerId];
@@ -176,10 +215,10 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
       )}
 
       {/* Mode Bar */}
-      <div className="bg-[var(--bg-card)] border border-[var(--border-main)] rounded-xl p-3 flex flex-wrap items-center justify-center gap-6 text-xs text-[var(--text-muted)]">
-        {/* Language & Custom selector */}
+      <div className="bg-[var(--bg-card)] rounded-xl p-3 flex flex-wrap items-center justify-center gap-6 text-xs text-[var(--text-muted)]">
+        {/* Bahasa */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wider text-[var(--accent-main)] font-bold">{strings.mode}:</span>
+          <span className="text-[10px] uppercase tracking-wider text-[var(--accent-main)] font-bold">{strings.language || 'bahasa'}:</span>
           <button
             onClick={() => handleLanguageChange('ID')}
             disabled={!isHost}
@@ -202,11 +241,51 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
           >
             {strings.english}
           </button>
+        </div>
+
+        <div className="w-[1px] h-4 bg-[var(--border-main)]" />
+
+        {/* Mode */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--accent-main)] font-bold">{strings.mode}:</span>
           <button
-            onClick={() => handleLanguageChange('CUSTOM')}
+            onClick={() => handleModeChange('WORDS')}
             disabled={!isHost}
             className={`px-2.5 py-1 rounded transition-all ${
-              textLanguage === 'CUSTOM'
+              textMode === 'WORDS'
+                ? 'text-[var(--accent-main)] bg-[var(--bg-input)] font-bold border border-[var(--accent-main)]/50 shadow-sm'
+                : 'hover:text-[var(--text-typed)]'
+            }`}
+          >
+            {strings.wordsMode || 'words'}
+          </button>
+          <button
+            onClick={() => handleModeChange('PUNCTUATION')}
+            disabled={!isHost}
+            className={`px-2.5 py-1 rounded transition-all ${
+              textMode === 'PUNCTUATION'
+                ? 'text-[var(--accent-main)] bg-[var(--bg-input)] font-bold border border-[var(--accent-main)]/50 shadow-sm'
+                : 'hover:text-[var(--text-typed)]'
+            }`}
+          >
+            {strings.punctuationMode || 'punctuation'}
+          </button>
+          <button
+            onClick={() => handleModeChange('QUOTE')}
+            disabled={!isHost}
+            className={`px-2.5 py-1 rounded transition-all ${
+              textMode === 'QUOTE'
+                ? 'text-[var(--accent-main)] bg-[var(--bg-input)] font-bold border border-[var(--accent-main)]/50 shadow-sm'
+                : 'hover:text-[var(--text-typed)]'
+            }`}
+          >
+            {strings.quoteMode || 'quotes'}
+          </button>
+          <button
+            onClick={() => handleModeChange('CUSTOM')}
+            disabled={!isHost}
+            className={`px-2.5 py-1 rounded transition-all ${
+              textMode === 'CUSTOM'
                 ? 'text-[var(--accent-main)] bg-[var(--bg-input)] font-bold border border-[var(--accent-main)]/50 shadow-sm'
                 : 'hover:text-[var(--text-typed)]'
             }`}
@@ -215,12 +294,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
           </button>
         </div>
 
-        {textLanguage !== 'CUSTOM' && (
+        {textMode !== 'CUSTOM' && (
           <>
             <div className="w-[1px] h-4 bg-[var(--border-main)]" />
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wider text-[var(--accent-main)] font-bold">{strings.length}:</span>
-              {([15, 25, 50] as TextLength[]).map((len) => (
+              {([15, 25, 30, 50] as TextLength[]).map((len) => (
                 <button
                   key={len}
                   onClick={() => handleLengthChange(len)}
@@ -243,12 +322,12 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
       <RaceTrack players={playerList} currentPlayerId={localPlayerId} />
 
       {/* Action Button: Start Race (Host) or Toggle Ready (Non-Host) */}
-      <div className="pt-1">
+      <div className="pt-1 flex justify-center">
         {isHost ? (
           <button
             onClick={handleStartRace}
             disabled={!allGuestsReady}
-            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-1.5 ${
+            className={`px-8 py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-1.5 ${
               allGuestsReady
                 ? 'bg-[var(--accent-main)] hover:brightness-110 text-slate-950 cursor-pointer shadow-[0_0_15px_var(--accent-glow)]'
                 : 'bg-[var(--bg-card)] border border-[var(--border-main)] text-[var(--text-muted)] opacity-60 cursor-not-allowed'
@@ -266,7 +345,7 @@ export const LobbyView: React.FC<LobbyViewProps> = ({ onLeaveLobby }) => {
         ) : (
           <button
             onClick={handleToggleReady}
-            className={`w-full py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
+            className={`px-8 py-3.5 rounded-xl font-extrabold text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
               isLocalReady
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-500/30 shadow-[0_0_10px_rgba(52,211,153,0.2)]'
                 : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-extrabold shadow-[0_0_15px_rgba(16,185,129,0.4)]'

@@ -1,15 +1,15 @@
 import { Peer, type DataConnection } from 'peerjs';
 import { useRaceStore } from '../store/useRaceStore';
 import { useTypingStore } from '../store/useTypingStore';
-import type { Player, RoomStatus, TextLanguage, TextLength } from '../types/game';
+import type { Player, RoomStatus, TextLanguage, TextMode, TextLength } from '../types/game';
 
 type RealtimeMessage =
-  | { event: 'join_room'; payload: { roomId: string; player: Player; roomState?: { targetText: string; status: RoomStatus; textLanguage: TextLanguage; textLength: TextLength; hostId: string } } }
+  | { event: 'join_room'; payload: { roomId: string; player: Player; roomState?: { targetText: string; status: RoomStatus; textLanguage: TextLanguage; textMode: TextMode; textLength: TextLength; hostId: string } } }
   | { event: 'player_progress'; payload: { roomId: string; playerId: string; progress: number; wpm: number; accuracy: number; isFinished: boolean; finishTime?: number } }
   | { event: 'player_ready'; payload: { roomId: string; playerId: string; isReady: boolean } }
   | { event: 'kick_player'; payload: { roomId: string; playerId: string } }
   | { event: 'room_state_change'; payload: { roomId: string; status: RoomStatus; targetText: string; countdownSec?: number } }
-  | { event: 'host_settings_change'; payload: { roomId: string; textLanguage: TextLanguage; textLength: TextLength; targetText: string } }
+  | { event: 'host_settings_change'; payload: { roomId: string; textLanguage: TextLanguage; textMode: TextMode; textLength: TextLength; targetText: string } }
   | { event: 'sync_state'; payload: { roomId: string; players: Record<string, Player>; targetText: string; status: RoomStatus; hostId: string } }
   | { event: 'request_sync'; payload: { roomId: string; requesterId: string } }
   | { event: 'player_leave'; payload: { roomId: string; playerId: string } };
@@ -295,6 +295,7 @@ class RealtimeService {
             targetText: state.targetText,
             status: state.status,
             textLanguage: state.textLanguage,
+            textMode: state.textMode,
             textLength: state.textLength,
             hostId: state.hostId
           } : undefined
@@ -465,9 +466,9 @@ class RealtimeService {
     });
   }
 
-  public broadcastHostSettings(textLanguage: TextLanguage, textLength: TextLength, targetText: string) {
+  public broadcastHostSettings(textLanguage: TextLanguage, textMode: TextMode, textLength: TextLength, targetText: string) {
     const state = useRaceStore.getState();
-    state.setRoomSettings(textLanguage, textLength);
+    state.setRoomSettings(textLanguage, textMode, textLength);
     state.setTargetText(targetText);
     useTypingStore.getState().resetTyping();
 
@@ -476,6 +477,7 @@ class RealtimeService {
       payload: {
         roomId: this.currentRoomId,
         textLanguage,
+        textMode,
         textLength,
         targetText
       }
@@ -623,8 +625,8 @@ class RealtimeService {
       }
 
       case 'host_settings_change': {
-        const { textLanguage, textLength, targetText } = msg.payload;
-        state.setRoomSettings(textLanguage, textLength);
+        const { textLanguage, textMode, textLength, targetText } = msg.payload;
+        state.setRoomSettings(textLanguage, textMode, textLength);
         state.setTargetText(targetText);
         break;
       }
