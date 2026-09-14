@@ -511,136 +511,148 @@ class RealtimeService {
     }
   }
 
-  private handleIncomingMessage(msg: RealtimeMessage) {
+  // --- Dedicated Event Handlers (Extract Method Pattern) ---
+
+  private onJoinRoom(payload: Extract<RealtimeMessage, { event: 'join_room' }>['payload']) {
     const state = useRaceStore.getState();
-    if (msg.payload.roomId !== this.currentRoomId) return;
+    const { player, roomState } = payload;
 
-    switch (msg.event) {
-      case 'join_room': {
-        const { player, roomState } = msg.payload;
+    if (player.id === state.localPlayerId) return;
 
-        // Don't duplicate self
-        if (player.id === state.localPlayerId) break;
+    state.joinRoom(this.currentRoomId, player);
 
-        // Add joining player to state
-        state.joinRoom(this.currentRoomId, player);
-
-        // If I am host, send my authoritative state back to new joiner
-        if (state.hostId === state.localPlayerId) {
-          this.broadcast({
-            event: 'sync_state',
-            payload: {
-              roomId: this.currentRoomId,
-              players: useRaceStore.getState().players,
-              targetText: state.targetText,
-              status: state.status,
-              hostId: state.hostId
-            }
-          });
-        } else if (roomState && roomState.hostId) {
-          // If joined a room with existing host state
-          state.setTargetText(roomState.targetText);
-          state.setRoomStatus(roomState.status);
-          useRaceStore.setState({ hostId: roomState.hostId });
+    if (state.hostId === state.localPlayerId) {
+      this.broadcast({
+        event: 'sync_state',
+        payload: {
+          roomId: this.currentRoomId,
+          players: useRaceStore.getState().players,
+          targetText: state.targetText,
+          status: state.status,
+          hostId: state.hostId
         }
-        break;
-      }
+      });
+    } else if (roomState && roomState.hostId) {
+      state.setTargetText(roomState.targetText);
+      state.setRoomStatus(roomState.status);
+      useRaceStore.setState({ hostId: roomState.hostId });
+    }
+  }
 
-      case 'request_sync': {
-        if (state.hostId === state.localPlayerId) {
-          this.broadcast({
-            event: 'sync_state',
-            payload: {
-              roomId: this.currentRoomId,
-              players: useRaceStore.getState().players,
-              targetText: state.targetText,
-              status: state.status,
-              hostId: state.hostId
-            }
-          });
+  private onRequestSync() {
+    const state = useRaceStore.getState();
+    if (state.hostId === state.localPlayerId) {
+      this.broadcast({
+        event: 'sync_state',
+        payload: {
+          roomId: this.currentRoomId,
+          players: useRaceStore.getState().players,
+          targetText: state.targetText,
+          status: state.status,
+          hostId: state.hostId
         }
-        break;
-      }
+      });
+    }
+  }
 
-      case 'sync_state': {
-        const { players, targetText, status, hostId } = msg.payload;
-        useRaceStore.setState({
-          players: { ...useRaceStore.getState().players, ...players },
-          targetText,
-          status,
-          hostId
-        });
-        useTypingStore.getState().resetTyping();
-        break;
-      }
+  private onSyncState(payload: Extract<RealtimeMessage, { event: 'sync_state' }>['payload']) {
+    const { players, targetText, status, hostId } = payload;
+    useRaceStore.setState({
+      players: { ...useRaceStore.getState().players, ...players },
+      targetText,
+      status,
+      hostId
+    });
+    useTypingStore.getState().resetTyping();
+  }
 
-      case 'player_progress': {
-        const { playerId, progress, wpm, accuracy, isFinished, finishTime } = msg.payload;
-        state.updatePlayer(playerId, {
-          progress,
-          wpm,
-          accuracy,
-          isFinished,
-          finishTime
-        });
-        this.checkAllFinished();
-        break;
-      }
+  private onPlayerProgress(payload: Extract<RealtimeMessage, { event: 'player_progress' }>['payload']) {
+    const state = useRaceStore.getState();
+    const { playerId, progress, wpm, accuracy, isFinished, finishTime } = payload;
+    state.updatePlayer(playerId, {
+      progress,
+      wpm,
+      accuracy,
+      isFinished,
+      finishTime
+    });
+    this.checkAllFinished();
+  }
 
-      case 'player_ready': {
-        const { playerId, isReady } = msg.payload;
-        state.updatePlayer(playerId, { isReady });
-        break;
-      }
+  private onPlayerReady(payload: Extract<RealtimeMessage, { event: 'player_ready' }>['payload']) {
+    const state = useRaceStore.getState();
+    const { playerId, isReady } = payload;
+    state.updatePlayer(playerId, { isReady });
+  }
 
-      case 'kick_player': {
-        const { playerId } = msg.payload;
-        if (playerId === state.localPlayerId) {
-          this.disconnect();
-          state.resetRaceRoom();
-          useTypingStore.getState().resetTyping();
-          if (this.onKickedListener) {
-            this.onKickedListener();
-          }
-        } else {
-          state.removePlayer(playerId);
-          this.checkAllFinished();
-        }
-        break;
+  private onKickPlayer(payload: Extract<RealtimeMessage, { event: 'kick_player' }>['payload']) {
+    const state = useRaceStore.getState();
+    const { playerId } = payload;
+    if (playerId === state.localPlayerId) {
+      this.disconnect();
+      state.resetRaceRoom();
+      useTypingStore.getState().resetTyping();
+      if (this.onKickedListener) {
+        this.onKickedListener();
       }
+    } else {
+      state.removePlayer(playerId);
+      this.checkAllFinished();
+    }
+  }
 
-      case 'room_state_change': {
-        const { status, targetText, countdownSec } = msg.payload;
-        state.setRoomStatus(status);
-        if (status === 'COUNTDOWN') {
-          useTypingStore.getState().resetTyping();
-        }
-        if (targetText) {
-          state.setTargetText(targetText);
-        }
-        if (countdownSec !== undefined) {
-          state.setCountdownSec(countdownSec);
-        }
-        break;
-      }
+  private onRoomStateChange(payload: Extract<RealtimeMessage, { event: 'room_state_change' }>['payload']) {
+    const state = useRaceStore.getState();
+    const { status, targetText, countdownSec } = payload;
+    state.setRoomStatus(status);
+    if (status === 'COUNTDOWN') {
+      useTypingStore.getState().resetTyping();
+    }
+    if (targetText) {
+      state.setTargetText(targetText);
+    }
+    if (countdownSec !== undefined) {
+      state.setCountdownSec(countdownSec);
+    }
+  }
 
-      case 'host_settings_change': {
-        const { textLanguage, textMode, textLength, targetText } = msg.payload;
-        state.setRoomSettings(textLanguage, textMode, textLength);
-        state.setTargetText(targetText);
-        break;
-      }
+  private onHostSettingsChange(payload: Extract<RealtimeMessage, { event: 'host_settings_change' }>['payload']) {
+    const state = useRaceStore.getState();
+    const { textLanguage, textMode, textLength, targetText } = payload;
+    state.setRoomSettings(textLanguage, textMode, textLength);
+    state.setTargetText(targetText);
+  }
 
-      case 'player_leave': {
-        state.removePlayer(msg.payload.playerId);
-        const newState = useRaceStore.getState();
-        if (newState.hostId === state.localPlayerId && (!this.peer || this.peer.destroyed)) {
-          const cleanRoomId = this.currentRoomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-          this.initHostPeer(`tr-host-${cleanRoomId}`);
-        }
-        this.checkAllFinished();
-        break;
-      }
+  private onPlayerLeave(payload: Extract<RealtimeMessage, { event: 'player_leave' }>['payload']) {
+    const state = useRaceStore.getState();
+    state.removePlayer(payload.playerId);
+    const newState = useRaceStore.getState();
+    if (newState.hostId === state.localPlayerId && (!this.peer || this.peer.destroyed)) {
+      const cleanRoomId = this.currentRoomId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      this.initHostPeer(`tr-host-${cleanRoomId}`);
+    }
+    this.checkAllFinished();
+  }
+
+  // --- Handler Map Dispatch Table Pattern ---
+  private messageHandlers: { [K in RealtimeMessage['event']]?: (payload: any) => void } = {
+    join_room: (p) => this.onJoinRoom(p),
+    request_sync: () => this.onRequestSync(),
+    sync_state: (p) => this.onSyncState(p),
+    player_progress: (p) => this.onPlayerProgress(p),
+    player_ready: (p) => this.onPlayerReady(p),
+    kick_player: (p) => this.onKickPlayer(p),
+    room_state_change: (p) => this.onRoomStateChange(p),
+    host_settings_change: (p) => this.onHostSettingsChange(p),
+    player_leave: (p) => this.onPlayerLeave(p)
+  };
+
+  private handleIncomingMessage(msg: RealtimeMessage) {
+    if (!msg || !msg.payload || msg.payload.roomId !== this.currentRoomId) return;
+
+    const handler = this.messageHandlers[msg.event];
+    if (handler) {
+      handler(msg.payload);
     }
   }
 }
